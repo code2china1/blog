@@ -1,1 +1,545 @@
-<!DOCTYPE html><html lang="zh-CN"><head>    <meta charset="UTF-8">    <title>我的个人网站</title>    <style>        body {            font-family: Arial, sans-serif;            max-width: 800px;            margin: 0 auto;            padding: 20px;            text-align: center;        }        h1 {            color: #333;        }</style></head><body>    <h1>欢迎来到我的个人网站</h1>    <p>这是一个使用Cloudflare Pages免费部署的网站！</p></body></html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>福建第一Coder - 技术博客</title>
+    <style>
+        /* 全局样式 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        }
+        
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        /* 导航栏 */
+        .navbar {
+            background: linear-gradient(135deg, #1e5799 0%, #207cca 51%, #2989d8 100%);
+            color: white;
+            padding: 1rem 2rem;
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .navbar-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            font-size: 1.8rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+        }
+        
+        .logo-icon {
+            margin-right: 10px;
+            font-size: 2rem;
+        }
+        
+        .nav-links {
+            display: flex;
+            list-style: none;
+        }
+        
+        .nav-links li {
+            margin-left: 2rem;
+        }
+        
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            padding: 0.5rem 0;
+            position: relative;
+        }
+        
+        .nav-links a:hover {
+            color: #ffde7d;
+        }
+        
+        .nav-links a::after {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 2px;
+            background: #ffde7d;
+            bottom: 0;
+            left: 0;
+            transition: width 0.3s ease;
+        }
+        
+        .nav-links a:hover::after {
+            width: 100%;
+        }
+        
+        /* 主要内容 */
+        .main-content {
+            max-width: 1200px;
+            margin: 6rem auto 2rem;
+            padding: 0 2rem;
+        }
+        
+        /* 英雄区域 */
+        .hero {
+            text-align: center;
+            padding: 4rem 0;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 10px;
+            margin-bottom: 3rem;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+        
+        .hero h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            color: #2c3e50;
+        }
+        
+        .hero p {
+            font-size: 1.2rem;
+            color: #7f8c8d;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .hero-buttons {
+            margin-top: 2rem;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 0.8rem 1.5rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            margin: 0 0.5rem;
+        }
+        
+        .btn-primary {
+            background-color: #3498db;
+            color: white;
+            border: 2px solid #3498db;
+        }
+        
+        .btn-primary:hover {
+            background-color: #2980b9;
+            border-color: #2980b9;
+            transform: translateY(-2px);
+        }
+        
+        .btn-outline {
+            background-color: transparent;
+            color: #3498db;
+            border: 2px solid #3498db;
+        }
+        
+        .btn-outline:hover {
+            background-color: #3498db;
+            color: white;
+            transform: translateY(-2px);
+        }
+        
+        /* 文章列表 */
+        .articles-section {
+            margin-top: 3rem;
+        }
+        
+        .section-title {
+            font-size: 1.8rem;
+            color: #2c3e50;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #3498db;
+            display: inline-block;
+        }
+        
+        .articles-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+        
+        .article-card {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .article-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .article-image {
+            height: 200px;
+            background-color: #ddd;
+            background-size: cover;
+            background-position: center;
+        }
+        
+        .article-content {
+            padding: 1.5rem;
+        }
+        
+        .article-title {
+            font-size: 1.3rem;
+            margin-bottom: 0.5rem;
+            color: #2c3e50;
+        }
+        
+        .article-excerpt {
+            color: #7f8c8d;
+            margin-bottom: 1rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        
+        .article-meta {
+            display: flex;
+            justify-content: space-between;
+            color: #95a5a6;
+            font-size: 0.9rem;
+        }
+        
+        .read-more {
+            color: #3498db;
+            text-decoration: none;
+            font-weight: bold;
+            display: inline-block;
+            margin-top: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .read-more:hover {
+            color: #2980b9;
+            transform: translateX(5px);
+        }
+        
+        /* 关于我 */
+        .about-section {
+            margin-top: 4rem;
+            background: white;
+            padding: 3rem;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+        
+        .about-content {
+            display: flex;
+            align-items: center;
+            gap: 3rem;
+        }
+        
+        .about-image {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            background-color: #ddd;
+            background-size: cover;
+            background-position: center;
+            flex-shrink: 0;
+            border: 5px solid #f5f7fa;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .about-text h2 {
+            color: #2c3e50;
+            margin-bottom: 1rem;
+        }
+        
+        .about-text p {
+            margin-bottom: 1rem;
+            color: #7f8c8d;
+        }
+        
+        .social-links {
+            margin-top: 1.5rem;
+        }
+        
+        .social-links a {
+            display: inline-block;
+            margin-right: 1rem;
+            color: #3498db;
+            font-size: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        
+        .social-links a:hover {
+            color: #2980b9;
+            transform: translateY(-3px);
+        }
+        
+        /* 页脚 */
+        .footer {
+            background-color: #2c3e50;
+            color: white;
+            text-align: center;
+            padding: 2rem;
+            margin-top: 4rem;
+        }
+        
+        .footer p {
+            margin-bottom: 1rem;
+        }
+        
+        .back-to-top {
+            display: inline-block;
+            background-color: #3498db;
+            color: white;
+            width: 40px;
+            height: 40px;
+            line-height: 40px;
+            border-radius: 50%;
+            text-align: center;
+            margin-top: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .back-to-top:hover {
+            background-color: #2980b9;
+            transform: translateY(-3px);
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .navbar-container {
+                flex-direction: column;
+            }
+            
+            .nav-links {
+                margin-top: 1rem;
+            }
+            
+            .nav-links li {
+                margin-left: 1rem;
+                margin-right: 1rem;
+            }
+            
+            .hero h1 {
+                font-size: 2rem;
+            }
+            
+            .about-content {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .articles-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <div class="logo">
+                <span class="logo-icon">👨‍💻</span>
+                <span>福建第一Coder</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="#home">首页</a></li>
+                <li><a href="#articles">文章</a></li>
+                <li><a href="#about">关于我</a></li>
+                <li><a href="#contact">联系</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- 主要内容 -->
+    <div class="main-content">
+        <!-- 英雄区域 -->
+        <section class="hero" id="home">
+            <h1>欢迎来到福建第一Coder的技术博客</h1>
+            <p>这里分享前端开发、后端架构、算法设计与各种编程技巧，记录我的技术成长之路</p>
+            <div class="hero-buttons">
+                <a href="#articles" class="btn btn-primary">阅读文章</a>
+                <a href="#about" class="btn btn-outline">关于作者</a>
+            </div>
+        </section>
+
+        <!-- 文章列表 -->
+        <section class="articles-section" id="articles">
+            <h2 class="section-title">最新文章</h2>
+            <div class="articles-grid" id="articles-container">
+                <!-- 文章将通过JS动态加载 -->
+            </div>
+        </section>
+
+        <!-- 关于我 -->
+        <section class="about-section" id="about">
+            <h2 class="section-title">关于我</h2>
+            <div class="about-content">
+                <div class="about-image" style="background-image: url('https://via.placeholder.com/200')"></div>
+                <div class="about-text">
+                    <h2>福建第一Coder</h2>
+                    <p>全栈工程师，热爱编程和技术分享。专注于Web开发、性能优化和架构设计。</p>
+                    <p>毕业于福州大学计算机系，拥有8年开发经验，曾在多家知名互联网公司担任技术负责人。</p>
+                    <p>喜欢研究新技术，乐于分享知识，希望通过这个博客帮助更多开发者成长。</p>
+                    <div class="social-links">
+                        <a href="#" title="GitHub"><i>GitHub</i></a>
+                        <a href="#" title="知乎"><i>知乎</i></a>
+                        <a href="#" title="微博"><i>微博</i></a>
+                        <a href="#" title="掘金"><i>掘金</i></a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- 页脚 -->
+    <footer class="footer" id="contact">
+        <p>© 2023 福建第一Coder - 技术博客</p>
+        <p>邮箱: fujiancoder@example.com</p>
+        <a href="#" class="back-to-top" id="back-to-top">↑</a>
+    </footer>
+
+    <script>
+        // 文章数据
+        const articles = [
+            {
+                title: "深入理解JavaScript闭包",
+                excerpt: "闭包是JavaScript中一个非常重要的概念，本文将深入探讨闭包的工作原理、使用场景以及常见问题。",
+                image: "https://via.placeholder.com/350x200/3498db/ffffff?text=JavaScript",
+                date: "2023-05-15",
+                readTime: "8分钟阅读",
+                category: "前端开发"
+            },
+            {
+                title: "Node.js性能优化指南",
+                excerpt: "分享我在实际项目中优化Node.js应用性能的经验和技巧，包括内存管理、事件循环和集群模式等。",
+                image: "https://via.placeholder.com/350x200/2ecc71/ffffff?text=Node.js",
+                date: "2023-04-28",
+                readTime: "12分钟阅读",
+                category: "后端开发"
+            },
+            {
+                title: "Vue 3组合式API实战",
+                excerpt: "详细介绍Vue 3的组合式API如何使用，通过实际案例展示其优势和应用场景。",
+                image: "https://via.placeholder.com/350x200/9b59b6/ffffff?text=Vue.js",
+                date: "2023-04-15",
+                readTime: "10分钟阅读",
+                category: "前端框架"
+            },
+            {
+                title: "微服务架构设计原则",
+                excerpt: "探讨微服务架构的核心设计原则，包括服务划分、通信机制和分布式事务处理等关键问题。",
+                image: "https://via.placeholder.com/350x200/e74c3c/ffffff?text=Microservices",
+                date: "2023-03-30",
+                readTime: "15分钟阅读",
+                category: "架构设计"
+            },
+            {
+                title: "Webpack 5配置完全指南",
+                excerpt: "从零开始配置Webpack 5，涵盖常用loader、插件和优化技巧，适合初学者和中级开发者。",
+                image: "https://via.placeholder.com/350x200/34495e/ffffff?text=Webpack",
+                date: "2023-03-18",
+                readTime: "14分钟阅读",
+                category: "构建工具"
+            },
+            {
+                title: "TypeScript高级类型技巧",
+                excerpt: "分享TypeScript中一些高级类型的使用技巧，包括条件类型、映射类型和模板字面量类型等。",
+                image: "https://via.placeholder.com/350x200/3498db/ffffff?text=TypeScript",
+                date: "2023-03-05",
+                readTime: "9分钟阅读",
+                category: "前端开发"
+            }
+        ];
+
+        // 渲染文章列表
+        function renderArticles() {
+            const container = document.getElementById('articles-container');
+            
+            articles.forEach(article => {
+                const articleElement = document.createElement('div');
+                articleElement.className = 'article-card';
+                articleElement.innerHTML = `
+                    <div class="article-image" style="background-image: url('${article.image}')"></div>
+                    <div class="article-content">
+                        <h3 class="article-title">${article.title}</h3>
+                        <p class="article-excerpt">${article.excerpt}</p>
+                        <div class="article-meta">
+                            <span>${article.date}</span>
+                            <span>${article.readTime}</span>
+                        </div>
+                        <a href="#" class="read-more">阅读全文 →</a>
+                    </div>
+                `;
+                container.appendChild(articleElement);
+            });
+        }
+
+        // 返回顶部按钮
+        function setupBackToTop() {
+            const backToTopBtn = document.getElementById('back-to-top');
+            
+            window.addEventListener('scroll', () => {
+                if (window.pageYOffset > 300) {
+                    backToTopBtn.style.display = 'block';
+                } else {
+                    backToTopBtn.style.display = 'none';
+                }
+            });
+            
+            backToTopBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+            });
+        }
+
+        // 平滑滚动
+        function setupSmoothScroll() {
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    
+                    const targetId = this.getAttribute('href');
+                    if (targetId === '#') return;
+                    
+                    const targetElement = document.querySelector(targetId);
+                    if (targetElement) {
+                        window.scrollTo({
+                            top: targetElement.offsetTop - 80,
+                            behavior: 'smooth'
+                        });
+                    }
+                });
+            });
+        }
+
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', () => {
+            renderArticles();
+            setupBackToTop();
+            setupSmoothScroll();
+        });
+    </script>
+</body>
+</html>
