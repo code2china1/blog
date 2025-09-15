@@ -1,596 +1,417 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-        <meta charset="UTF-8" />
-        <title>3D地球 GPX 轨迹动画</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link href="https://unpkg.com/cesium@1.120.0/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
-        <style>
-            html, body { width:100%; height:100%; margin:0; padding:0; background:#000; }
-            #cesiumContainer {
-                    position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);
-                    width:100%; height:100%;
-                    margin:0; padding:0; background:#000;
-                }
-            #controls {
-                    position:absolute; top:10px; left:10px; z-index:999;
-                    background:rgba(255,255,255,0.92); padding:8px; border-radius:8px;
-                    font-family:system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-                    font-size:14px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;
-                    box-shadow:0 2px 12px rgba(0,0,0,.12);
-                }
-            #progress { width:240px; }
-            button, select, input[type="file"], input[type="number"], input[type="text"], input[type="range"] {
-                    padding:6px 10px; border:1px solid #d0d0d7; border-radius:6px; background:#fff;
-                }
-            button.primary { background:#1f6feb; color:#fff; border-color:#1f6feb; }
-            button:disabled { opacity:.5; cursor:not-allowed; }
-            .muted { color:#666; font-size:12px; }
-    .label-wrap { display:flex; align-items:center; }
-        </style>
+    <meta charset="utf-8" />
+    <title>高德地图 GPX 轨迹回放（红-白-黄分段 + 参数调节 + 自动回起点 + 动态方向锁定 + 帧间隔）</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; }
+        #container { width: 100%; height: calc(100% - 64px); }
+        #controls {
+            height: 64px; display: flex; align-items: center; gap: 10px;
+            padding: 0 12px; background: #f7f7f7; border-top: 1px solid #eee;
+            box-sizing: border-box;
+        }
+        #playBtn { padding: 6px 14px; cursor: pointer; }
+        #progress { flex: 1; }
+        .label { color:#333; font: 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial; }
+    </style>
+    <!-- 高德地图 JS API -->
+    <script src="https://webapi.amap.com/maps?v=2.0&key=a8f969d32367869fb23e558d5600a54a"></script>
+    <!-- GPX 解析库 -->
+    <script src="https://unpkg.com/gpxparser/dist/gpxparser.min.js"></script>
 </head>
 <body>
-<div id="cesiumContainer"></div>
+
+<div id="container"></div>
 
 <div id="controls">
-        <input type="file" id="file" accept=".gpx" />
-        <button id="fit" disabled>适配视图</button>
-        <button id="play" class="primary" disabled>播放</button>
-        <button id="pause" disabled>暂停</button>
-        <button id="stop" disabled>停止</button>
-
-        <label>倍速:
-            <select id="speed">
-                    <option value="1">1x</option>
-                    <option value="1.5">1.5x</option>
-                    <option value="2">2x</option>
-                    <option value="3">3x</option>
-                    <option value="0.5">0.5x</option>
-                </select>
-        </label>
-
-        <label>基准速度:
-            <select id="mps">
-                    <option value="1.4">走路 1.4 m/s</option>
-                    <option value="3.0">慢跑 3.0 m/s</option>
-                    <option value="5.6">骑行 5.6 m/s</option>
-                    <option value="15" selected>驾车 15 m/s</option>
-                    <option value="1500">飞机</option>
-                </select>
-        </label>
-
-        <label>跟随:
-            <select id="followMode">
-                    <option value="lead" selected>靠前可视</option>
-                    <option value="center">居中</option>
-                    <option value="off">关闭</option>
-                </select>
-        </label>
-
-        <label id="leadWrap">前置距离:
-            <input type="number" id="leadMeters" value="1200" min="100" max="20000" step="50" /> m
-        </label>
-
-        <label>比例:
-            <select id="aspectRatio">
-                    <option value="default">默认</option>
-                    <option value="16:9">16:9</option>
-                    <option value="9:16" selected>9:16</option>
-                </select>
-        </label>
-
-        <label>图标:
-            <input type="file" id="markerIcon" accept="image/*" />
-        </label>
-        <label>交通工具:
-            <select id="emojiSelector">
-                    <option value="🚗">🚗 汽车</option>
-                    <option value="🚢">🚢 轮船</option>
-                    <option value="🚚">🚚 卡车</option>
-                    <option value="🚆">🚆 火车</option>
-                    <option value="✈️">✈️ 飞机</option>
-                    <option value="🎈">🎈 热气球</option>
-                    <option value="🚲">🚲 自行车</option>
-                    <option value="🛵">🛵 摩托车</option>
-                    <option value="🛹">🛹 滑板车</option>
-                </select>
-        </label>
-        <label>相机高度:
-            <input type="range" id="cameraHeight" min="20" max="500" value="100" step="10" />
-            <span id="heightLabel" class="muted">100 m</span>
-        </label>
-        <label>相机仰角:
-            <input type="range" id="pitchAngle" min="-90" max="-5" value="-25" step="1" />
-            <span id="pitchLabel" class="muted">-25°</span>
-        </label>
-    <label>高程拉伸:
-                <input type="range" id="exaggeration" min="1" max="50" value="1" step="0.5" />
-                <span id="exaggerationLabel" class="muted">1x</span>
-            </label>
-    <div class="label-wrap">
-                <input type="checkbox" id="showLabel" checked />
-                <label for="showLabel">显示公里数</label>
-            </div>
-    <label>单位:
-                <select id="unitSelector">
-                        <option value="km">千米</option>
-                        <option value="m">米</option>
-                    </select>
-            </label>
-
-        <input type="range" id="progress" min="0" max="1" step="0.0001" value="0" disabled />
-        <span id="pct" class="muted">0%</span>
-        <span id="dist" class="muted">0 / 0 km</span>
+    <input type="file" id="fileInput" accept=".gpx" />
+    <button id="playBtn" disabled>▶ 播放</button>
+    <input type="range" id="progress" min="0" max="1000" value="0" disabled />
+    <label class="label">倍速：
+        <select id="speedSelect" disabled>
+            <option value="0.5">0.5x</option>
+            <option value="1">1x</option>
+            <option value="2">2x</option>
+            <option value="5">5x</option>
+            <option value="10">10x</option>
+            <option value="40">40x</option>
+            <option value="50" selected>50x</option>
+        </select>
+    </label>
+    <label class="label">红色长度(m)：
+        <input type="number" id="redLengthInput" value="2000" min="100" step="100" style="width:70px;">
+    </label>
+    <label class="label">速度(m/s)：
+        <input type="number" id="speedInput" value="10" min="1" step="1" style="width:50px;">
+    </label>
+    <label class="label">仰角(°)：
+        <input type="number" id="pitchInput" value="60" min="0" max="80" step="1" style="width:50px;">
+    </label>
+    <label class="label">
+        <input type="checkbox" id="followCheck" checked> 镜头跟随
+    </label>
+    <label class="label">
+        <input type="checkbox" id="loopCheck"> 播放完成回到起点
+    </label>
+    <label class="label">方向锁定：
+        <select id="headingSelect" disabled>
+            <option value="north" selected>朝北</option>
+            <option value="south">朝南</option>
+        </select>
+    </label>
+    <label class="label">方向更新帧数：
+        <input type="number" id="headingIntervalInput" value="10" min="1" step="1" style="width:50px;">
+    </label>
+    <span class="label" id="readout">0m / 0m</span>
 </div>
 
-<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<script src="https://unpkg.com/cesium@1.120.0/Build/Cesium/Cesium.js"></script>
 <script>
-    // Cesium 初始化
-    const viewer = new Cesium.Viewer("cesiumContainer", {
-        animation: false, timeline: false, geocoder: false, homeButton: false,
-        baseLayerPicker: true, sceneModePicker: true, navigationHelpButton: false, infoBox: false
+    /* ===== 坐标转换 WGS84 → GCJ02 ===== */
+    const PI = Math.PI, a = 6378245.0, ee = 0.00669342162296594323;
+    function out_of_china(lng, lat){ return (lng<72.004||lng>137.8347)||(lat<0.8293||lat>55.8271); }
+    function transformlat(lng, lat){
+        let ret=-100+2*lng+3*lat+0.2*lat*lat+0.1*lng*lat+0.2*Math.sqrt(Math.abs(lng));
+        ret+= (20*Math.sin(6*lng*PI)+20*Math.sin(2*lng*PI))*2/3;
+        ret+= (20*Math.sin(lat*PI)+40*Math.sin(lat/3*PI))*2/3;
+        ret+= (160*Math.sin(lat/12*PI)+320*Math.sin(lat*PI/30))*2/3;
+        return ret;
+    }
+    function transformlng(lng, lat){
+        let ret=300+lng+2*lat+0.1*lng*lng+0.1*lng*lat+0.1*Math.sqrt(Math.abs(lng));
+        ret+= (20*Math.sin(6*lng*PI)+20*Math.sin(2*lng*PI))*2/3;
+        ret+= (20*Math.sin(lng*PI)+40*Math.sin(lng/3*PI))*2/3;
+        ret+= (150*Math.sin(lng/12*PI)+300*Math.sin(lng/30*PI))*2/3;
+        return ret;
+    }
+    function wgs84togcj02(lng, lat){
+        if(out_of_china(lng,lat)) return [lng,lat];
+        let dlat=transformlat(lng-105,lat-35), dlng=transformlng(lng-105,lat-35);
+        const radlat=lat/180*PI; let magic=Math.sin(radlat);
+        magic=1-ee*magic*magic; const sqrtmagic=Math.sqrt(magic);
+        dlat=(dlat*180)/((a*(1-ee))/(magic*sqrtmagic)*PI);
+        dlng=(dlng*180)/(a/sqrtmagic*Math.cos(radlat)*PI);
+        return [lng+dlng, lat+dlat];
+    }
+
+    /* ===== 距离计算与插值 ===== */
+    function haversine(aLngLat, bLngLat){
+        const [lng1,lat1]=aLngLat, [lng2,lat2]=bLngLat;
+        const R=6371000;
+        const toRad = d=>d*PI/180;
+        const dLat=toRad(lat2-lat1), dLng=toRad(lng2-lng1);
+        const s1=Math.sin(dLat/2), s2=Math.sin(dLng/2);
+        const aa=s1*s1 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*s2*s2;
+        return 2*R*Math.asin(Math.sqrt(aa));
+    }
+    function buildCumulativeDistances(path){
+        const d=[0]; for(let i=1;i<path.length;i++){ d.push(d[i-1]+haversine(path[i-1], path[i])); }
+        return d;
+    }
+    function findSegmentIndex(distArr, target){
+        let lo=1, hi=distArr.length-1;
+        if(target<=0) return 1;
+        const total=distArr[hi];
+        if(target>=total) return hi;
+        while(lo<=hi){
+            const mid=(lo+hi)>>1;
+            if(distArr[mid]===target) return mid;
+            if(distArr[mid]<target) lo=mid+1; else hi=mid-1;
+        }
+        return lo;
+    }
+    function interpolateOnPath(path, distArr, target){
+        if(target<=0) return path[0];
+        const N=path.length-1, total=distArr[N];
+        if(target>=total) return path[N];
+        const i=findSegmentIndex(distArr, target);
+        const d0=distArr[i-1], d1=distArr[i];
+        const r=(target-d0)/(d1-d0);
+        const [lng0,lat0]=path[i-1], [lng1,lat1]=path[i];
+        return [lng0+(lng1-lng0)*r, lat0+(lat1-lat0)*r];
+    }
+
+    /* ===== 地图与状态 ===== */
+    const map = new AMap.Map('container', {
+        zoom: 17,
+        pitch: 60,
+        viewMode: '3D',
+        center: [116.397428, 39.90923],
+        layers: [
+            new AMap.TileLayer.Satellite(),
+            new AMap.TileLayer.RoadNet()
+        ]
     });
-    viewer.scene.globe.depthTestAgainstTerrain = false;
 
-    // 轨迹与动画状态
-    let trackLatLngs = [];
-    let cumDist = [];
-    let totalDist = 0;
-    let currentDist = 0;
-    let playing = false;
-    let lastTs = null;
-    let animReq = null;
+    let points = [], distArr = [], totalDist = 0;
+    let polylineBlue, polylineRed, polylineGray;
+    let timer = null;
+    let baseInterval = 50;
+    let speedMps = 10;
+    let speedMultiplier = 50; // 保留你的默认倍速
+    let headDist = 0;
+    let redLength = 2000;
+    let followCamera = true;
+    let loopToStart = false;
+    let fixedHeading = 'north'; // 默认朝北
 
-    // 实体
-    let fullLineEntity = null;
-    let walkedLineEntity = null;
-    let markerEntity = null;
-    let distanceLabelEntity = null;
+    // 帧间隔控制变量
+    let headingUpdateInterval = 10; // 默认每10帧更新一次方向
+    let frameCounter = 0;
 
-    // 范围
-    let bounds = null;
+    const fileInput = document.getElementById('fileInput');
+    const playBtn   = document.getElementById('playBtn');
+    const progress  = document.getElementById('progress');
+    const speedSel  = document.getElementById('speedSelect');
+    const readout   = document.getElementById('readout');
+    const redLengthInput = document.getElementById('redLengthInput');
+    const speedInput = document.getElementById('speedInput');
+    const pitchInput = document.getElementById('pitchInput');
+    const followCheck = document.getElementById('followCheck');
+    const loopCheck = document.getElementById('loopCheck');
+    const headingSelect = document.getElementById('headingSelect');
+    const headingIntervalInput = document.getElementById('headingIntervalInput');
 
-    // 自定义图标和文字
-    let customMarkerUrl = null;
-    let markerText = '🚗';
-
-    // 根据文字或图片生成 billboard 图片
-    function createBillboardImage(text, imageUrl) {
-        if (imageUrl) {
-            return imageUrl;
-        }
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const fontSize = 36;
-        ctx.font = `${fontSize}px sans-serif`;
-        const textMetrics = ctx.measureText(text);
-        const textWidth = textMetrics.width;
-        canvas.width = textWidth + 10;
-        canvas.height = fontSize + 10;
-        ctx.font = `${fontSize}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-        return canvas.toDataURL();
+    function setControlsEnabled(on){
+        playBtn.disabled = !on;
+        progress.disabled = !on;
+        speedSel.disabled = !on;
+        redLengthInput.disabled = !on;
+        speedInput.disabled = !on;
+        pitchInput.disabled = !on;
+        followCheck.disabled = !on;
+        loopCheck.disabled = !on;
+        headingSelect.disabled = !on;
+        headingIntervalInput.disabled = !on;
+    }
+    function updateReadout(){
+        readout.textContent = `${Math.round(headDist)}m / ${Math.round(totalDist)}m`;
+    }
+    function headDistToProgress(){
+        if (totalDist<=0) return 0;
+        return Math.round((headDist/totalDist)*1000);
+    }
+    function progressToHeadDist(val){
+        return (totalDist * (val/1000));
     }
 
-    // 工具：解析 GPX
-    function parseGPXToLatLngs(gpxText) {
-        const doc = new DOMParser().parseFromString(gpxText, "application/xml");
-        let pts = Array.from(doc.querySelectorAll("trkpt"));
-        if (pts.length === 0) pts = Array.from(doc.querySelectorAll("rtept"));
-        return pts.map(pt => [parseFloat(pt.getAttribute("lat")), parseFloat(pt.getAttribute("lon"))])
-            .filter(v => Number.isFinite(v[0]) && Number.isFinite(v[1]));
-    }
-
-    // 工具：球面距离（米）
-    function haversineMeters(a, b) {
-        const R = 6371000;
-        const dLat = (b[0]-a[0]) * Math.PI/180;
-        const dLon = (b[1]-a[1]) * Math.PI/180;
-        const lat1 = a[0] * Math.PI/180;
-        const lat2 = b[0] * Math.PI/180;
-        const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
-        return 2 * R * Math.asin(Math.sqrt(h));
-    }
-
-    // 工具：bearing 度
-    function bearingDeg(a, b) {
-        const φ1 = a[0]*Math.PI/180, φ2 = b[0]*Math.PI/180, λ1 = a[1]*Math.PI/180, λ2 = b[1]*Math.PI/180;
-        const y = Math.sin(λ2-λ1) * Math.cos(φ2);
-        const x = Math.cos(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1) + Math.sin(φ1)*Math.sin(φ2);
-        let deg = Math.atan2(y, x) * 180/Math.PI;
-        return (deg + 360) % 360;
-    }
-
-    // 工具：朝向与距离得到终点
-    function destinationPoint(start, brgDeg, distMeters) {
-        const R = 6371000;
-        const δ = distMeters / R;
-        const θ = brgDeg * Math.PI/180;
-        const φ1 = start[0]*Math.PI/180, λ1 = start[1]*Math.PI/180;
-        const sinφ1 = Math.sin(φ1), cosφ1 = Math.cos(φ1);
-        const sinδ = Math.sin(δ), cosδ = Math.cos(δ);
-        const sinφ2 = sinφ1*cosδ + cosφ1*sinδ*Math.cos(θ);
-        const φ2 = Math.asin(sinφ2);
-        const y = Math.sin(θ)*sinδ*cosφ1;
-        const x = cosδ - sinφ1*sinφ2;
-        const λ2 = λ1 + Math.atan2(y, x);
-        return [φ2*180/Math.PI, ((λ2*180/Math.PI + 540) % 360) - 180];
-    }
-
-    // 插值：给定距离，返回 [lat, lon]
-    function interpolateAtDistance(d) {
-        if (trackLatLngs.length === 0) return null;
-        if (d <= 0) return trackLatLngs[0];
-        if (d >= totalDist) return trackLatLngs[trackLatLngs.length - 1];
-
-        let lo = 0, hi = cumDist.length - 1;
-        while (lo < hi) {
-            const mid = (lo + hi) >> 1;
-            if (cumDist[mid] < d) lo = mid + 1; else hi = mid;
-        }
-        const i = Math.max(1, lo);
-        const d0 = cumDist[i - 1], d1 = cumDist[i];
-        const t = (d - d0) / (d1 - d0);
-        const p0 = trackLatLngs[i - 1], p1 = trackLatLngs[i];
-        return [p0[0] + (p1[0]-p0[0]) * t, p0[1] + (p1[1]-p0[1]) * t];
-    }
-
-    // 当前前进方向用于“靠前可视”
-    function currentBearing(pos) {
-        if (trackLatLngs.length < 2) return 0;
-        let lo = 0, hi = cumDist.length - 1;
-        while (lo < hi) {
-            const mid = (lo + hi) >> 1;
-            if (cumDist[mid] < currentDist) lo = mid + 1; else hi = mid;
-        }
-        const i = Math.max(1, lo);
-        const p1 = trackLatLngs[Math.min(i, trackLatLngs.length - 1)];
-        const ref = (currentDist >= totalDist) ? trackLatLngs[trackLatLngs.length - 2] : pos;
-        return bearingDeg(ref, p1);
-    }
-
-    // UI 更新
-    function updateProgressUI() {
-        const ratio = totalDist ? currentDist / totalDist : 0;
-        $("#progress").val(ratio);
-        $("#pct").text((ratio*100).toFixed(1) + "%");
-
-        const unit = $("#unitSelector").val();
-        const factor = (unit === 'km') ? 1000 : 1;
-        const totalText = (totalDist / factor).toFixed(2);
-        const currentText = (currentDist / factor).toFixed(2);
-        $("#dist").text(`${currentText} / ${totalText} ${unit}`);
-    }
-
-    // 相机跟随
-    function applyFollowCamera(pos) {
-        const mode = $("#followMode").val();
-        if (mode === "off") return;
-
-        const brg = currentBearing(pos);
-        const pitchAngle = parseFloat($("#pitchAngle").val());
-
-        let target = pos;
-        if (mode === "lead") {
-            const lead = Math.max(50, Math.min(20000, parseFloat($("#leadMeters").val() || "1200")));
-            target = destinationPoint(pos, brg, lead);
-        }
-
-        const cameraHeight = parseFloat($("#cameraHeight").val());
-        const cameraDistance = cameraHeight / Math.tan(Cesium.Math.toRadians(-pitchAngle));
-        const cameraPos = destinationPoint(pos, (brg + 180) % 360, cameraDistance);
-
-        viewer.camera.setView({
-            destination: Cesium.Cartesian3.fromDegrees(cameraPos[1], cameraPos[0], cameraHeight),
-            orientation: {
-                heading: Cesium.Math.toRadians(brg),
-                pitch: Cesium.Math.toRadians(pitchAngle),
-                roll: 0.0
-            }
+    // 初始化三条线（保留你的颜色）
+    function createOrResetLayers(){
+        map.clearMap();
+        polylineBlue = new AMap.Polyline({
+            path: [], strokeColor: "red", strokeWeight: 6, strokeOpacity: 0.9
         });
+        map.add(polylineBlue);
+
+        polylineRed = new AMap.Polyline({
+            path: [], strokeColor: "white", strokeWeight: 6, strokeOpacity: 1
+        });
+        map.add(polylineRed);
+
+        polylineGray = new AMap.Polyline({
+            path: points, strokeColor: "yellow", strokeWeight: 5, strokeOpacity: 0.4
+        });
+        map.add(polylineGray);
+
+        map.setFitView([polylineGray]);
     }
 
-    // 设置/重置轨迹
-    function setupTrack(latlngs) {
-        trackLatLngs = latlngs.slice();
-        cumDist = [0]; totalDist = 0;
-
-        for (let i = 1; i < trackLatLngs.length; i++) {
-            totalDist += haversineMeters(trackLatLngs[i-1], trackLatLngs[i]);
-            cumDist.push(totalDist);
+    // 根据起止距离生成路径
+    function buildSegmentPath(startDist, endDist) {
+        if (endDist <= startDist) return [];
+        const path = [];
+        const step = 20;
+        for (let d = startDist; d <= endDist; d += step) {
+            path.push(interpolateOnPath(points, distArr, d));
         }
-
-        // bounds
-        let minLat = 90, minLon = 180, maxLat = -90, maxLon = -180;
-        trackLatLngs.forEach(([lat, lon]) => {
-            if (lat < minLat) minLat = lat;
-            if (lon < minLon) minLon = lon;
-            if (lat > maxLat) maxLat = lat;
-            if (lon > maxLon) maxLon = lon;
-        });
-        bounds = { minLat, minLon, maxLat, maxLon };
-
-        // 清理旧实体
-        viewer.entities.removeAll();
-
-        // 新建全轨迹（灰）
-        fullLineEntity = viewer.entities.add({
-            polyline: {
-                positions: Cesium.Cartesian3.fromDegreesArray(trackLatLngs.flatMap(([lat, lon]) => [lon, lat])),
-                width: 3,
-                material: Cesium.Color.fromCssColorString("#888").withAlpha(0.7),
-                clampToGround: false
-            }
-        });
-
-        // 已走（红）
-        walkedLineEntity = viewer.entities.add({
-            polyline: {
-                positions: new Cesium.CallbackProperty(() => {
-                    const walkedPoints = [];
-                    for (let i = 0; i < trackLatLngs.length; i++) {
-                        if (cumDist[i] <= currentDist) {
-                            walkedPoints.push(trackLatLngs[i]);
-                        } else {
-                            walkedPoints.push(interpolateAtDistance(currentDist));
-                            break;
-                        }
-                    }
-                    return Cesium.Cartesian3.fromDegreesArray(walkedPoints.flatMap(([lat, lon]) => [lon, lat]));
-                }, false),
-                width: 4,
-                material: Cesium.Color.RED.withAlpha(0.95),
-                clampToGround: false
-            }
-        });
-
-        // 标记
-        markerEntity = viewer.entities.add({
-            position: Cesium.Cartesian3.fromDegrees(trackLatLngs[0][1], trackLatLngs[0][0], 0),
-            billboard: {
-                image: new Cesium.CallbackProperty(() => createBillboardImage(markerText, customMarkerUrl), false),
-                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                disableDepthTestDistance: 1000
-            }
-        });
-
-        // 距离标记，显示已走距离和剩余距离
-        distanceLabelEntity = viewer.entities.add({
-            position: new Cesium.CallbackProperty(() => {
-                const pos = interpolateAtDistance(currentDist);
-                if (!pos) return Cesium.Cartesian3.ZERO;
-
-                const brg = currentBearing(pos);
-                // 标签位置在当前点前方 250 米处
-                const labelPos = destinationPoint(pos, brg, 250);
-                return Cesium.Cartesian3.fromDegrees(labelPos[1], labelPos[0], 0);
-            }, false),
-            label: {
-                text: new Cesium.CallbackProperty(() => {
-                    const unit = $("#unitSelector").val();
-                    const factor = (unit === 'km') ? 1000 : 1;
-                    const remaining = totalDist - currentDist;
-                    const current = currentDist;
-
-                    const currentText = `已走: ${(current / factor).toFixed(2)} ${unit}`;
-                    const remainingText = `剩余: ${(remaining / factor).toFixed(2)} ${unit}`;
-                    return `${currentText}\n${remainingText}`;
-                }, false),
-                font: '14pt sans-serif',
-                fillColor: Cesium.Color.BLACK,
-                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                outlineColor: Cesium.Color.WHITE,
-                outlineWidth: 2.0,
-                showBackground: true,
-                backgroundColor: Cesium.Color.fromCssColorString("#fff").withAlpha(0.0),
-                backgroundPadding: new Cesium.Cartesian2(8, 4),
-                horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                disableDepthTestDistance: 10000 // 确保标签不被地球遮挡
-            }
-        });
-
-        currentDist = 0; lastTs = null;
-        updateProgressUI();
-
-        $("#play,#stop,#fit,#progress").prop("disabled", trackLatLngs.length < 2);
-        $("#pause").prop("disabled", true);
+        path.push(interpolateOnPath(points, distArr, endDist));
+        return path;
     }
 
-    // 动画帧
-    function tick(ts) {
-        if (!playing) return;
-        if (lastTs == null) lastTs = ts;
-        const deltaSec = (ts - lastTs) / 1000;
-        lastTs = ts;
-
-        const base = parseFloat($("#mps").val());
-        const factor = parseFloat($("#speed").val());
-        currentDist += base * factor * deltaSec;
-
-        if (currentDist >= totalDist) {
-            currentDist = totalDist;
-            playing = false;
-        }
-
-        const pos = interpolateAtDistance(currentDist);
-        if (pos) {
-            markerEntity.position = Cesium.Cartesian3.fromDegrees(pos[1], pos[0], 0);
-            applyFollowCamera(pos);
-        }
-        updateProgressUI();
-
-        if (playing) animReq = requestAnimationFrame(tick);
-        else {
-            cancelAnimationFrame(animReq);
-            animReq = null;
-            $("#play").prop("disabled", false).text("重播").addClass("primary");
-            $("#pause").prop("disabled", true);
-        }
+    // 计算两点间航向角（0°=北，顺时针）
+    function calcBearing(p1, p2) {
+        const toRad = d => d * Math.PI / 180;
+        const toDeg = r => r * 180 / Math.PI;
+        const [lng1, lat1] = p1;
+        const [lng2, lat2] = p2;
+        const dLon = toRad(lng2 - lng1);
+        const y = Math.sin(dLon) * Math.cos(toRad(lat2));
+        const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+            Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+        let brng = toDeg(Math.atan2(y, x));
+        return (brng + 360) % 360;
     }
 
-    // 适配视域到轨迹
-    function fitToBounds() {
-        if (!bounds) return;
-        const rect = Cesium.Rectangle.fromDegrees(bounds.minLon, bounds.minLat, bounds.maxLon, bounds.maxLat);
-        viewer.camera.flyTo({ destination: rect });
-    }
+    // 应用动态方向锁定（带帧间隔）
+    function applyFixedHeadingDynamic() {
+        frameCounter++;
+        if (frameCounter < headingUpdateInterval) {
+            return; // 未到更新间隔，不计算
+        }
+        frameCounter = 0; // 重置计数
 
-    // 根据选择的比例调整地图容器尺寸
-    function handleAspectRatioChange() {
-        const ratio = $("#aspectRatio").val();
-        const container = $("#cesiumContainer");
-        const windowWidth = $(window).width();
-        const windowHeight = $(window).height();
+        const idx = findSegmentIndex(distArr, headDist);
+        if (idx >= points.length) return;
+        const curr = interpolateOnPath(points, distArr, headDist);
+        const next = points[Math.min(idx, points.length - 1)];
+        const bearing = calcBearing(curr, next); // 实际航向
 
-        if (ratio === "default") {
-            container.css({ width: "100%", height: "100%" });
+        let rotation;
+        if (fixedHeading === 'north') {
+            rotation = (360 - bearing) % 360;
         } else {
-            const [ratioWidth, ratioHeight] = ratio.split(":").map(Number);
-            const windowRatio = windowWidth / windowHeight;
-            const targetRatio = ratioWidth / ratioHeight;
-
-            let newWidth, newHeight;
-            if (windowRatio > targetRatio) {
-                newHeight = windowHeight;
-                newWidth = newHeight * targetRatio;
-            } else {
-                newWidth = windowWidth;
-                newHeight = newWidth / targetRatio;
-            }
-            container.css({ width: newWidth + "px", height: newHeight + "px" });
+            rotation = (360 - bearing + 180) % 360;
         }
-        viewer.resize();
+        map.setRotation(rotation);
     }
 
-    // 事件绑定
-    $(function(){
-        viewer.camera.setView({
-            destination: Cesium.Cartesian3.fromDegrees(139.0, 35.0, 2_000_000)
-        });
+    // 更新三色轨迹
+    function updateGeometry() {
+        if (!points.length) return;
+        const headPos = interpolateOnPath(points, distArr, headDist);
 
-        handleAspectRatioChange();
-        $(window).on("resize", handleAspectRatioChange);
-        $("#aspectRatio").on("change", handleAspectRatioChange);
+        let bluePath = [];
+        if (headDist > redLength) {
+            const blueEnd = headDist - redLength;
+            bluePath = buildSegmentPath(0, blueEnd);
+        }
 
-        $("#file").on("change", function(e){
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(evt){
-                const gpxText = evt.target.result;
-                const latlngs = parseGPXToLatLngs(gpxText);
-                if (!latlngs || latlngs.length < 2) {
-                    alert("未解析到有效轨迹点（trkpt/rtept）");
-                    return;
+        const redStart = Math.max(0, headDist - redLength);
+        const redPath = buildSegmentPath(redStart, headDist);
+
+        const grayPath = buildSegmentPath(headDist, totalDist);
+
+        polylineBlue.setPath(bluePath);
+        polylineRed.setPath(redPath);
+        polylineGray.setPath(grayPath);
+
+        if (followCamera) {
+            map.setCenter(headPos);
+        }
+        applyFixedHeadingDynamic();
+        progress.value = headDistToProgress();
+        updateReadout();
+    }
+
+    function startTimer(){
+        clearInterval(timer);
+        timer = setInterval(()=>{
+            headDist += speedMps * speedMultiplier * (baseInterval/1000);
+            if (headDist >= totalDist){
+                headDist = totalDist;
+                updateGeometry();
+                if (loopToStart) {
+                    resetPlayback();
+                } else {
+                    pause();
                 }
-                setupTrack(latlngs);
-                fitToBounds();
-                $("#fit").prop("disabled", false);
-            };
-            reader.readAsText(file);
-        });
-
-        $("#play").on("click", function(){
-            if (totalDist <= 0) return;
-            playing = true; lastTs = null;
-            $("#pause").prop("disabled", false);
-            $(this).removeClass("primary").text("播放");
-            animReq = requestAnimationFrame(tick);
-        });
-
-        $("#pause").on("click", function(){
-            playing = false;
-            cancelAnimationFrame(animReq);
-            $(this).prop("disabled", true);
-            $("#play").prop("disabled", false).addClass("primary").text("继续");
-        });
-
-        $("#stop").on("click", function(){
-            playing = false;
-            cancelAnimationFrame(animReq);
-            currentDist = 0;
-            updateProgressUI();
-            if (markerEntity && trackLatLngs.length) {
-                const p = trackLatLngs[0];
-                markerEntity.position = Cesium.Cartesian3.fromDegrees(p[1], p[0], 0);
-            }
-            $("#pause").prop("disabled", true);
-            $("#play").prop("disabled", false).addClass("primary").text("播放");
-        });
-
-        $("#fit").on("click", fitToBounds);
-
-        $("#progress").on("input", function(){
-            if (totalDist <= 0) return;
-            const ratio = parseFloat($(this).val());
-            currentDist = Math.max(0, Math.min(1, ratio)) * totalDist;
-            const pos = interpolateAtDistance(currentDist);
-            if (pos && markerEntity) {
-                markerEntity.position = Cesium.Cartesian3.fromDegrees(pos[1], pos[0], 0);
-                applyFollowCamera(pos);
-            }
-            updateProgressUI();
-        });
-
-        $("#followMode").on("change", function(){
-            const mode = $(this).val();
-            $("#leadWrap").css("display", mode === "lead" ? "inline-flex" : "none");
-        }).trigger("change");
-
-        // 处理图标文件上传
-        $("#markerIcon").on("change", function(e) {
-            const file = e.target.files[0];
-            if (!file) {
-                customMarkerUrl = null;
                 return;
             }
-            const reader = new FileReader();
-            reader.onload = function(evt) {
-                customMarkerUrl = evt.target.result;
-                markerText = ''; // 清除文字，优先显示图片
-                $("#emojiSelector").val('');
-            };
-            reader.readAsDataURL(file);
-        });
+            updateGeometry();
+        }, baseInterval);
+    }
+    function play(){
+        if (!points.length) return;
+        playBtn.textContent = '⏸ 暂停';
+        startTimer();
+    }
+    function pause(){
+        playBtn.textContent = '▶ 播放';
+        clearInterval(timer);
+    }
+    function resetPlayback(){
+        headDist = 0;
+        pause();
+        updateGeometry();
+    }
 
-        // 处理交通工具选择
-        $("#emojiSelector").on("change", function() {
-            markerText = $(this).val();
-            customMarkerUrl = null; // 清除图片，优先显示文字
-            $("#markerIcon").val('');
-        });
+    /* ===== 文件选择事件 ===== */
+    fileInput.addEventListener('change', (e)=>{
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = evt=>{
+            try{
+                const gpxText = evt.target.result;
+                const gpx = new gpxParser();
+                gpx.parse(gpxText);
+                const raw = (gpx.tracks && gpx.tracks[0] && gpx.tracks[0].points) ? gpx.tracks[0].points : [];
+                if (!raw.length) throw new Error('GPX 中没有轨迹点');
+                points = raw.map(p => wgs84togcj02(p.lon, p.lat));
 
-        // 处理相机高度调整
-        $("#cameraHeight").on("input", function() {
-            $("#heightLabel").text($(this).val() + " m");
-        });
+                const cleaned = [points[0]];
+                for (let i=1;i<points.length;i++){
+                    const [a,b]=[cleaned[cleaned.length-1], points[i]];
+                    if (a[0]!==b[0] || a[1]!==b[1]) cleaned.push(b);
+                }
+                points = cleaned;
 
-        // 处理相机仰角调整
-        $("#pitchAngle").on("input", function() {
-            $("#pitchLabel").text($(this).val() + "°");
-        });
+                distArr = buildCumulativeDistances(points);
+                totalDist = distArr[distArr.length-1];
 
-        // 处理高程拉伸
-        $("#exaggeration").on("input", function() {
-            const val = parseFloat($(this).val());
-            viewer.scene.globe.terrainExaggeration = val;
-            $("#exaggerationLabel").text(val + "x");
-        });
-
-        // 处理单位选择
-        $("#unitSelector").on("change", updateProgressUI);
-
-        // 处理标签显示/隐藏
-        $("#showLabel").on("change", function() {
-            if (distanceLabelEntity) {
-                distanceLabelEntity.show = this.checked;
+                createOrResetLayers();
+                setControlsEnabled(true);
+                resetPlayback();
+            }catch(err){
+                alert('解析 GPX 失败：' + err.message);
+                setControlsEnabled(false);
             }
-        });
+        };
+        reader.readAsText(file);
     });
+
+    /* ===== 控件事件绑定 ===== */
+    playBtn.addEventListener('click', ()=>{
+        if (playBtn.textContent.includes('播放')) play(); else pause();
+    });
+    progress.addEventListener('input', (e)=>{
+        headDist = progressToHeadDist(parseInt(e.target.value,10));
+        updateGeometry();
+    });
+    speedSel.addEventListener('change', (e)=>{
+        speedMultiplier = parseFloat(e.target.value);
+        if (playBtn.textContent.includes('暂停')) startTimer();
+    });
+    redLengthInput.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val > 0) {
+            redLength = val;
+            updateGeometry();
+        }
+    });
+    speedInput.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val > 0) {
+            speedMps = val;
+            if (playBtn.textContent.includes('暂停')) startTimer();
+        }
+    });
+    pitchInput.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val >= 0 && val <= 80) {
+            map.setPitch(val);
+        }
+    });
+    followCheck.addEventListener('change', (e) => {
+        followCamera = e.target.checked;
+    });
+    loopCheck.addEventListener('change', (e) => {
+        loopToStart = e.target.checked;
+    });
+    headingSelect.addEventListener('change', (e) => {
+        fixedHeading = e.target.value;
+        applyFixedHeadingDynamic();
+    });
+    headingIntervalInput.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (!isNaN(val) && val > 0) {
+            headingUpdateInterval = val;
+        }
+    });
+
+    setControlsEnabled(false);
+    updateReadout();
 </script>
 </body>
 </html>
