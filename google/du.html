@@ -2,135 +2,70 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>KML Tour 转换工具</title>
+    <title>KML Tour Wait 插入工具</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
-        textarea { width: 100%; height: 200px; margin: 10px 0; font-family: monospace; }
-        label { display: inline-block; margin: 5px 10px 5px 0; }
-        .config { margin: 10px 0; }
+        textarea { width: 100%; height: 220px; margin: 10px 0; font-family: monospace; }
+        label { margin-right: 10px; }
         button { padding: 6px 12px; margin-right: 10px; }
-        #summary { margin-top: 10px; padding: 10px; border: 1px solid #ccc; background: #f9f9f9; }
-        table { border-collapse: collapse; width: 100%; margin-top: 10px; }
-        th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
-        th { background: #eee; }
     </style>
 </head>
 <body>
-<h2>KML Tour 转换工具</h2>
+<h2>KML Tour Wait 插入工具</h2>
 
-<label>输入 KML 内容：</label>
-<textarea id="inputKml"></textarea>
+<label>显示后停顿时间 (秒):
+    <input type="number" id="waitTime" value="2" step="0.1">
+</label>
+<br><br>
+<button onclick="processKml()">转换</button>
+<button onclick="copyResult()">复制结果</button>
 
-<div class="config">
-    <label>过渡时间(s):
-        <input type="number" id="animatedDuration" value="1" step="0.1">
-    </label>
-    <label>停顿时间(s):
-        <input type="number" id="waitDuration" value="1" step="0.1">
-    </label>
-    <label>模式:
-        <select id="mode">
-            <option value="fade">渐变</option>
-            <option value="instant">瞬间+停顿</option>
-        </select>
-    </label>
-    <label>
-        <input type="checkbox" id="useWait" checked> 每步后加 Wait
-    </label>
-</div>
+<h3>输入 KML：</h3>
+<textarea id="inputKml" placeholder="粘贴 KML..."></textarea>
 
-<button onclick="convertKml()">转换</button>
-<button onclick="copyResult()">一键复制结果</button>
-
-<h3>输出结果：</h3>
+<h3>输出 KML：</h3>
 <textarea id="outputKml" readonly></textarea>
 
-<h3>元素统计：</h3>
-<div id="summary"></div>
-<div id="summaryTable"></div>
-<h3>汇总统计：</h3>
-<div id="aggregateTable"></div>
-
 <script>
-    function convertKml() {
+    function processKml() {
         const input = document.getElementById("inputKml").value;
-        const animatedDuration = parseFloat(document.getElementById("animatedDuration").value) || 1;
-        const waitDuration = parseFloat(document.getElementById("waitDuration").value) || 1;
-        const mode = document.getElementById("mode").value;
-        const useWait = document.getElementById("useWait").checked;
+        const waitTime = parseFloat(document.getElementById("waitTime").value) || 2;
 
-        const lines = input.split("\n");
-        let result = "";
-        let elementCount = 0;
-        let uniqueIds = new Set();
-        let tableRows = [];
-        let aggregate = {}; // { targetId: {show: n, hide: n} }
+        // 清除所有 <gx:Wait> 块
+        let cleaned = input.replace(/<gx:Wait>[\s\S]*?<\/gx:Wait>/g, "");
+
+        // 清除所有 <gx:duration>，但保留 FlyTo 内部的
+        const lines = cleaned.split(/\n/);
+        let result = [];
+        let insideFlyTo = false;
+        let seenFirstFlyTo = false;
 
         for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            result += line + "\n";
+            let line = lines[i];
 
-            if (line.includes("<gx:AnimatedUpdate>")) {
-                elementCount++;
-                if (mode === "instant") {
-                    result += "        <gx:duration>0</gx:duration>\n";
-                } else {
-                    result += "        <gx:duration>" + animatedDuration + "</gx:duration>\n";
-                }
+            // 判断是否进入或离开 <gx:FlyTo>
+            if (line.includes("<gx:FlyTo>")) {
+                insideFlyTo = true;
+                seenFirstFlyTo = true;
+            }
+            if (line.includes("</gx:FlyTo>")) {
+                insideFlyTo = false;
             }
 
-            if (line.includes("<Placemark")) {
-                const match = line.match(/targetId="([^"]+)"/);
-                if (match) {
-                    uniqueIds.add(match[1]);
-                    tableRows.push({ index: elementCount, targetId: match[1], action: "未知" });
-                }
+            // 删除 <gx:duration>，但保留 FlyTo 内部的
+            if (line.includes("<gx:duration>") && !insideFlyTo) {
+                continue;
             }
 
-            if (line.includes("<visibility>")) {
-                const visMatch = line.match(/<visibility>(\d)<\/visibility>/);
-                if (visMatch && tableRows.length > 0) {
-                    const lastRow = tableRows[tableRows.length - 1];
-                    lastRow.action = visMatch[1] === "1" ? "显示" : "隐藏";
+            result.push(line);
 
-                    // 更新汇总统计
-                    const id = lastRow.targetId;
-                    if (!aggregate[id]) aggregate[id] = { show: 0, hide: 0 };
-                    if (visMatch[1] === "1") {
-                        aggregate[id].show++;
-                    } else {
-                        aggregate[id].hide++;
-                    }
-                }
-            }
-
-            if (line.includes("</gx:AnimatedUpdate>") && useWait) {
-                result += "      <gx:Wait><gx:duration>" + waitDuration + "</gx:duration></gx:Wait>\n";
+            // 在 FlyTo 之后的 AnimatedUpdate 后插入 Wait
+            if (line.includes("</gx:AnimatedUpdate>") && seenFirstFlyTo && !insideFlyTo) {
+                result.push(`    <gx:Wait><gx:duration>${waitTime}</gx:duration></gx:Wait>`);
             }
         }
 
-        document.getElementById("outputKml").value = result;
-
-        // 文本统计
-        let summaryText = "共找到 " + elementCount + " 个 <gx:AnimatedUpdate> 元素<br>";
-        summaryText += "涉及 " + uniqueIds.size + " 个唯一的 Placemark targetId: " + Array.from(uniqueIds).join(", ");
-        document.getElementById("summary").innerHTML = summaryText;
-
-        // 表格统计
-        let tableHtml = "<table><tr><th>#</th><th>Placemark targetId</th><th>动作类型</th></tr>";
-        tableRows.forEach(row => {
-            tableHtml += "<tr><td>" + row.index + "</td><td>" + row.targetId + "</td><td>" + row.action + "</td></tr>";
-        });
-        tableHtml += "</table>";
-        document.getElementById("summaryTable").innerHTML = tableHtml;
-
-        // 汇总统计表
-        let aggHtml = "<table><tr><th>Placemark targetId</th><th>显示次数</th><th>隐藏次数</th></tr>";
-        for (let id in aggregate) {
-            aggHtml += "<tr><td>" + id + "</td><td>" + aggregate[id].show + "</td><td>" + aggregate[id].hide + "</td></tr>";
-        }
-        aggHtml += "</table>";
-        document.getElementById("aggregateTable").innerHTML = aggHtml;
+        document.getElementById("outputKml").value = result.join("\n");
     }
 
     function copyResult() {
