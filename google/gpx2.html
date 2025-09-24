@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPX路径分析与自动下载工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f0f0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        #container {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            overflow: hidden;
+        }
+        #background {
+            width: 100%;
+            height: 100%;
+            background-image: url('https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_gmt.jpg');
+            background-size: cover;
+            background-position: center;
+            transition: transform 1s ease-in-out;
+            position: absolute;
+        }
+        #path-line {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+        }
+        #controls {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background-color: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            z-index: 100;
+        }
+        #controls label, #controls button {
+            display: block;
+            margin-bottom: 10px;
+        }
+        #status {
+            margin-top: 10px;
+            color: #555;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="controls">
+    <h2>GPX路径分析与自动下载</h2>
+    <input type="file" id="fileInput" accept=".gpx">
+    <label for="stepInput">角度计算步长 (默认10)</label>
+    <input type="number" id="stepInput" value="10" min="1" step="1">
+    <button id="startButton">开始旋转</button>
+    <p id="status">请选择一个GPX文件</p>
+</div>
+
+<div id="container">
+    <div id="background"></div>
+    <canvas id="path-line"></canvas>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const fileInput = document.getElementById('fileInput');
+        const startButton = document.getElementById('startButton');
+        const stepInput = document.getElementById('stepInput');
+        const statusDiv = document.getElementById('status');
+        const background = document.getElementById('background');
+        const canvas = document.getElementById('path-line');
+        const ctx = canvas.getContext('2d');
+
+        let coordinates = [];
+        let intervalId = null;
+
+        function setCanvasSize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        setCanvasSize();
+        window.addEventListener('resize', setCanvasSize);
+
+        function calculateBearing(lat1, lon1, lat2, lon2) {
+            const toRad = (deg) => deg * Math.PI / 180;
+            const toDeg = (rad) => rad * 180 / Math.PI;
+            const p1_lat_rad = toRad(lat1);
+            const p1_lon_rad = toRad(lon1);
+            const p2_lat_rad = toRad(lat2);
+            const p2_lon_rad = toRad(lon2);
+            const delta_lon = p2_lon_rad - p1_lon_rad;
+            const y = Math.sin(delta_lon) * Math.cos(p2_lat_rad);
+            const x = Math.cos(p1_lat_rad) * Math.sin(p2_lat_rad) -
+                Math.sin(p1_lat_rad) * Math.cos(p2_lat_rad) * Math.cos(delta_lon);
+            let bearing = toDeg(Math.atan2(y, x));
+            bearing = (bearing + 360) % 360;
+            return bearing;
+        }
+
+        function rotateBackground(targetBearing) {
+            const targetRotation = -targetBearing;
+            background.style.transform = `rotate(${targetRotation}deg)`;
+        }
+
+        function drawPath(coords) {
+            if (coords.length < 2) return;
+            const longitudes = coords.map(c => c[0]);
+            const latitudes = coords.map(c => c[1]);
+            const minLon = Math.min(...longitudes);
+            const maxLon = Math.max(...longitudes);
+            const minLat = Math.min(...latitudes);
+            const maxLat = Math.max(...latitudes);
+            const lonRange = maxLon - minLon;
+            const latRange = maxLat - minLat;
+            const canvasWidth = canvas.width;
+            const canvasHeight = canvas.height;
+            const padding = 50;
+            let scaleX = (canvasWidth - padding * 2) / lonRange;
+            let scaleY = (canvasHeight - padding * 2) / latRange;
+            let scale = Math.min(scaleX, scaleY);
+            if (scale === Infinity) scale = 1;
+            const offsetX = (canvasWidth / 2) - ((minLon + maxLon) / 2) * scale;
+            const offsetY = (canvasHeight / 2) - ((minLat + maxLat) / 2) * scale;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.beginPath();
+            ctx.strokeStyle = '#0066cc';
+            ctx.lineWidth = 3;
+
+            ctx.moveTo(
+                coords[0][0] * scale + offsetX,
+                canvasHeight - (coords[0][1] * scale + offsetY)
+            );
+
+            for (let i = 1; i < coords.length; i++) {
+                ctx.lineTo(
+                    coords[i][0] * scale + offsetX,
+                    canvasHeight - (coords[i][1] * scale + offsetY)
+                );
+            }
+            ctx.stroke();
+        }
+
+        function parseGPX(fileContent) {
+            let coords = [];
+            try {
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(fileContent, "application/xml");
+                const trkpts = xmlDoc.querySelectorAll("trkpt");
+
+                if (trkpts.length === 0) {
+                    // Check if the file has tracks but no points
+                    const trks = xmlDoc.querySelectorAll("trk");
+                    if (trks.length > 0) {
+                        statusDiv.textContent = `文件包含 ${trks.length} 个轨迹，但没有找到任何轨迹点(trkpt)。`;
+                    } else {
+                        statusDiv.textContent = '文件中没有找到任何轨迹(trk)或轨迹点(trkpt)。';
+                    }
+                    return [];
+                }
+
+                trkpts.forEach(trkpt => {
+                    const lat = parseFloat(trkpt.getAttribute('lat'));
+                    const lon = parseFloat(trkpt.getAttribute('lon'));
+                    if (!isNaN(lat) && !isNaN(lon)) {
+                        coords.push([lon, lat]);
+                    }
+                });
+                return coords;
+            } catch (error) {
+                statusDiv.textContent = '解析文件时出错，请确保文件是有效的GPX格式。';
+                console.error(error);
+                return [];
+            }
+        }
+
+        function generateGpxContent(coords) {
+            let gpxHeader = '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX Viewer Tool" xmlns="http://www.topografix.com/GPX/1/1">\n<trk>\n<name>Converted Track</name>\n<trkseg>\n';
+            let gpxPoints = coords.map(c => `\t<trkpt lat="${c[1]}" lon="${c[0]}"></trkpt>`).join('\n');
+            let gpxFooter = '\n</trkseg>\n</trk>\n</gpx>';
+            return gpxHeader + gpxPoints + gpxFooter;
+        }
+
+        function triggerDownload(coords) {
+            statusDiv.textContent = '文件已解析，正在生成并下载GPX文件...';
+            const gpxContent = generateGpxContent(coords);
+            const blob = new Blob([gpxContent], { type: 'application/gpx+xml' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'converted_track.gpx';
+            document.body.appendChild(a);
+            a.click();
+
+            window.URL.revokeObjectURL(url);
+            a.remove();
+
+            statusDiv.textContent = 'GPX文件已成功下载。';
+        }
+
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const fileContent = e.target.result;
+                coordinates = parseGPX(fileContent);
+                if (coordinates.length > 1) {
+                    drawPath(coordinates);
+                    startButton.disabled = false;
+                    triggerDownload(coordinates);
+                } else {
+                    startButton.disabled = true;
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        startButton.addEventListener('click', () => {
+            if (coordinates.length < 2) {
+                statusDiv.textContent = '没有足够的坐标点来计算方向。';
+                return;
+            }
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
+            let currentIndex = 0;
+            const step = parseInt(stepInput.value, 10);
+            statusDiv.textContent = '正在开始旋转动画...';
+            intervalId = setInterval(() => {
+                const nextIndex = currentIndex + step;
+                if (nextIndex >= coordinates.length) {
+                    clearInterval(intervalId);
+                    statusDiv.textContent = '动画完成。';
+                    return;
+                }
+                const p1 = coordinates[currentIndex];
+                const p2 = coordinates[nextIndex];
+                const bearing = calculateBearing(p1[1], p1[0], p2[1], p2[0]);
+                rotateBackground(bearing);
+                currentIndex = nextIndex;
+            }, 1000);
+        });
+    });
+</script>
+</body>
+</html>

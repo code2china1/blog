@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>高级KML火车模拟器</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f9;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,.1);
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            align-items: center;
+            gap: 15px;
+        }
+
+        label {
+            font-weight: 600;
+            color: #555;
+            text-align: right;
+        }
+
+        .input-wrapper {
+            display: flex;
+            align-items: center;
+        }
+
+        input[type="file"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+        }
+
+        .description-note {
+            margin-left: 10px;
+            font-size: 14px;
+            color: #888;
+            white-space: nowrap;
+        }
+
+        .info-box {
+            grid-column: 1 / -1;
+            font-size: 14px;
+            color: #333;
+            background-color: #f0f8ff;
+            padding: 15px;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+            margin-bottom: 25px;
+        }
+
+        .info-box h3 {
+            margin-top: 0;
+        }
+
+        button {
+            grid-column: 1 / -1;
+            width: 100%;
+            padding: 12px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #218838;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        textarea {
+            grid-column: 1 / -1;
+            width: 100%;
+            height: 400px;
+            margin-top: 20px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre;
+            overflow: auto;
+            font-size: 14px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        .processing-indicator {
+            display: none;
+            grid-column: 1 / -1;
+            text-align: center;
+            color: #007bff;
+            font-weight: bold;
+        }
+
+        @media (max-width: 640px) {
+            .control-group {
+                grid-template-columns: 1fr;
+            }
+            label {
+                text-align: left;
+            }
+        }
+
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>高级KML火车模拟器</h1>
+
+    <div class="info-box">
+        <h3>功能说明</h3>
+        <p>此工具会读取您KML文件中的路径，并重新生成一个带有<b>可移动线段（火车）</b>的KML游览文件。您可以自定义火车的长度、速度和视角。</p>
+    </div>
+
+    <div class="control-group">
+        <label for="kmlFile">1. 上传路径KML:</label>
+        <div class="input-wrapper">
+            <input type="file" id="kmlFile" accept=".kml">
+            <span class="description-note">（包含路径即可）</span>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="control-group">
+        <label for="trainLength">2. 火车参数:</label>
+        <div class="input-wrapper">
+            <input type="number" id="trainLength" value="50" min="1">
+            <span class="description-note">火车长度 (米)</span>
+        </div>
+    </div>
+    <div class="control-group">
+        <label></label>
+        <div class="input-wrapper">
+            <input type="number" id="speed" value="120" min="1">
+            <span class="description-note">行驶速度 (km/h)</span>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="control-group">
+        <label for="altitude">3. 视角参数:</label>
+        <div class="input-wrapper">
+            <input type="number" id="altitude" value="200" min="0">
+            <span class="description-note">俯瞰高度 (米)</span>
+        </div>
+    </div>
+    <div class="control-group">
+        <label></label>
+        <div class="input-wrapper">
+            <input type="number" id="tilt" value="75" min="0" max="90">
+            <span class="description-note">仰角 (0-90度)</span>
+        </div>
+    </div>
+    <div class="control-group">
+        <label></label>
+        <div class="input-wrapper">
+            <input type="checkbox" id="faceNorth">
+            <span class="description-note">固定朝北 (否则自动跟随方向)</span>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="control-group">
+        <label for="precision">4. 精度模式:</label>
+        <div class="input-wrapper">
+            <select id="precision">
+                <option value="high">高精度（10米插值，文件大）</option>
+                <option value="medium" selected>中等（50米插值，文件适中）</option>
+                <option value="low">低精度（100米插值，文件小）</option>
+            </select>
+            <span class="description-note">影响文件大小与平滑度</span>
+        </div>
+    </div>
+    <div id="sizeHint" style="margin-left:10px; font-size:14px; color:#666;">
+        预计文件大小：—
+    </div>
+
+    <button id="generateBtn" disabled>请先加载KML文件</button>
+    <div id="processingIndicator" class="processing-indicator">正在处理，请稍候...</div>
+
+    <textarea id="outputKml" readonly placeholder="这里将显示生成的KML内容..."></textarea>
+</div>
+<script>
+    // --- DOM Elements ---
+    const fileInput = document.getElementById('kmlFile');
+    const trainLengthInput = document.getElementById('trainLength');
+    const speedInput = document.getElementById('speed');
+    const altitudeInput = document.getElementById('altitude');
+    const tiltInput = document.getElementById('tilt');
+    const faceNorthCheckbox = document.getElementById('faceNorth');
+    const precisionSelect = document.getElementById('precision');
+    const sizeHint = document.getElementById('sizeHint');
+    const generateBtn = document.getElementById('generateBtn');
+    const outputKmlTextarea = document.getElementById('outputKml');
+    const processingIndicator = document.getElementById('processingIndicator');
+
+    let sourceCoordinates = [];
+
+    // --- Event Listeners ---
+    fileInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) {
+            resetApp();
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const content = e.target.result;
+            try {
+                const coordinates = parseKmlCoordinates(content);
+                if (coordinates.length < 2) {
+                    throw new Error("KML文件中必须至少包含2个坐标点。");
+                }
+                sourceCoordinates = coordinates;
+                generateBtn.disabled = false;
+                generateBtn.textContent = '生成模拟KML';
+                alert(`文件加载成功！共找到 ${sourceCoordinates.length} 个坐标点。`);
+                updateSizeHint();
+            } catch (error) {
+                alert('解析文件失败: ' + error.message);
+                resetApp();
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    precisionSelect.addEventListener('change', updateSizeHint);
+
+    generateBtn.addEventListener('click', () => {
+        if (sourceCoordinates.length < 2) {
+            alert('没有有效的坐标数据，请重新上传文件。');
+            return;
+        }
+
+        processingIndicator.style.display = 'block';
+        generateBtn.disabled = true;
+
+        setTimeout(() => {
+            try {
+                const { stepMeters, cameraStep, trainStep } = getPrecisionParams();
+                const options = {
+                    trainLength: parseFloat(trainLengthInput.value),
+                    speedKmh: parseFloat(speedInput.value),
+                    cameraAltitude: parseFloat(altitudeInput.value),
+                    cameraTilt: parseFloat(tiltInput.value),
+                    faceNorth: faceNorthCheckbox.checked,
+                    stepMeters, cameraStep, trainStep
+                };
+                const kmlOutput = generateTrainKml(sourceCoordinates, options);
+                outputKmlTextarea.value = kmlOutput;
+                alert('KML生成成功！');
+            } catch (error) {
+                alert('生成KML时出错: ' + error.message);
+            } finally {
+                processingIndicator.style.display = 'none';
+                generateBtn.disabled = false;
+            }
+        }, 100);
+    });
+
+    // --- Core Functions ---
+    function resetApp() {
+        sourceCoordinates = [];
+        generateBtn.disabled = true;
+        generateBtn.textContent = '请先加载KML文件';
+        outputKmlTextarea.value = '';
+        sizeHint.textContent = '预计文件大小：—';
+    }
+
+    function parseKmlCoordinates(kmlString) {
+        const parser = new DOMParser();
+        const kmlDoc = parser.parseFromString(kmlString, "application/xml");
+        const coordinatesNode = kmlDoc.querySelector("coordinates");
+        if (!coordinatesNode) throw new Error("未找到<coordinates>标签。");
+
+        return coordinatesNode.textContent
+            .trim()
+            .split(/\s+/)
+            .map(pair => {
+                const [lon, lat, alt] = pair.split(',').map(Number);
+                return { lon, lat, alt: alt || 0 };
+            });
+    }
+
+    function getPrecisionParams() {
+        const mode = precisionSelect.value;
+        switch (mode) {
+            case 'high': return { stepMeters: 10, cameraStep: 1, trainStep: 1 };
+            case 'medium': return { stepMeters: 50, cameraStep: 5, trainStep: 2 };
+            case 'low': return { stepMeters: 100, cameraStep: 10, trainStep: 5 };
+        }
+    }
+
+    function updateSizeHint() {
+        if (sourceCoordinates.length < 2) {
+            sizeHint.textContent = '预计文件大小：—';
+            return;
+        }
+        const { stepMeters, cameraStep, trainStep } = getPrecisionParams();
+        const kb = estimateFileSize(sourceCoordinates, stepMeters, cameraStep, trainStep);
+        sizeHint.textContent = `预计文件大小：约 ${kb} KB`;
+    }
+
+    function estimateFileSize(coords, stepMeters, cameraStep, trainStep) {
+        let totalDist = 0;
+        for (let i = 0; i < coords.length - 1; i++) {
+            totalDist += haversine(coords[i].lat, coords[i].lon, coords[i+1].lat, coords[i+1].lon);
+        }
+        const interpolatedPoints = Math.max(2, Math.floor(totalDist / stepMeters));
+        const cameraUpdates = Math.ceil(interpolatedPoints / cameraStep);
+        const trainUpdates = Math.ceil(interpolatedPoints / trainStep);
+        const totalUpdates = cameraUpdates + trainUpdates;
+        const bytes = totalUpdates * 200; // 每个更新约200字节
+        return (bytes / 1024).toFixed(1);
+    }
+
+    // --- Geometry Helper Functions ---
+    const R = 6371e3;
+    function toRad(deg) { return deg * Math.PI / 180; }
+    function toDeg(rad) { return rad * 180 / Math.PI; }
+
+    function haversine(lat1, lon1, lat2, lon2) {
+        const phi1 = toRad(lat1), phi2 = toRad(lat2);
+        const dPhi = toRad(lat2 - lat1), dLambda = toRad(lon2 - lon1);
+        const a = Math.sin(dPhi/2)**2 + Math.cos(phi1)*Math.cos(phi2)*Math.sin(dLambda/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function calculateHeading(p1, p2) {
+        if (p1.lat === p2.lat && p1.lon === p2.lon) return 0;
+        const lat1 = toRad(p1.lat), lon1 = toRad(p1.lon);
+        const lat2 = toRad(p2.lat), lon2 = toRad(p2.lon);
+        const y = Math.sin(lon2 - lon1) * Math.cos(lat2);
+        const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1)*Math.cos(lat2)*Math.cos(lon2 - lon1);
+        return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    function interpolatePoints(points, stepMeters) {
+        const interpolated = [points[0]];
+        for (let i = 0; i < points.length - 1; i++) {
+            let p1 = points[i], p2 = points[i+1];
+            let dist = haversine(p1.lat, p1.lon, p2.lat, p2.lon);
+            if (dist <= stepMeters) { interpolated.push(p2); continue; }
+            let numSteps = Math.floor(dist / stepMeters);
+            for (let j = 1; j <= numSteps; j++) {
+                let frac = j / numSteps;
+                interpolated.push({
+                    lat: p1.lat + (p2.lat - p1.lat) * frac,
+                    lon: p1.lon + (p2.lon - p1.lon) * frac,
+                    alt: p1.alt + (p2.alt - p1.alt) * frac
+                });
+            }
+            interpolated.push(p2);
+        }
+        return interpolated;
+    }
+
+    function findPointAtDistance(points, startIndex, distanceMeters) {
+        let distanceTraveled = 0;
+        for (let i = startIndex; i < points.length - 1; i++) {
+            let p1 = points[i], p2 = points[i+1];
+            let segmentDist = haversine(p1.lat, p1.lon, p2.lat, p2.lon);
+            if (distanceTraveled + segmentDist >= distanceMeters) {
+                let remaining = distanceMeters - distanceTraveled;
+                let frac = remaining / segmentDist;
+                return {
+                    lat: p1.lat + (p2.lat - p1.lat) * frac,
+                    lon: p1.lon + (p2.lon - p1.lon) * frac,
+                    alt: p1.alt + (p2.alt - p1.alt) * frac
+                };
+            }
+            distanceTraveled += segmentDist;
+        }
+        return points[points.length - 1];
+    }
+    function generateTrainKml(coords, options) {
+        const speedMps = options.speedKmh * 1000 / 3600;
+        const interpolatedPoints = interpolatePoints(coords, options.stepMeters);
+        let tourPlaylist = '';
+
+        for (let i = 0; i < interpolatedPoints.length; i++) {
+            const currentPoint = interpolatedPoints[i];
+            const nextPoint = interpolatedPoints[i + 1] || currentPoint;
+
+            // 只在 cameraStep 的倍数时更新相机
+            if (i % options.cameraStep === 0) {
+                const heading = options.faceNorth ? 0 : calculateHeading(currentPoint, nextPoint);
+                tourPlaylist += `
+          <gx:FlyTo>
+            <gx:duration>1.0</gx:duration>
+            <gx:flyToMode>smooth</gx:flyToMode>
+            <LookAt>
+              <longitude>${currentPoint.lon}</longitude>
+              <latitude>${currentPoint.lat}</latitude>
+              <altitude>${options.cameraAltitude}</altitude>
+              <heading>${heading}</heading>
+              <tilt>${options.cameraTilt}</tilt>
+              <range>100</range>
+              <altitudeMode>relativeToGround</altitudeMode>
+            </LookAt>
+          </gx:FlyTo>
+        `;
+            }
+
+            // 只在 trainStep 的倍数时更新火车位置
+            if (i % options.trainStep === 0) {
+                const segmentEndPoint = findPointAtDistance(interpolatedPoints, i, options.trainLength);
+                const segmentCoords = `${currentPoint.lon},${currentPoint.lat},${currentPoint.alt} ${segmentEndPoint.lon},${segmentEndPoint.lat},${segmentEndPoint.alt}`;
+
+                tourPlaylist += `
+          <gx:AnimatedUpdate>
+            <gx:duration>0</gx:duration>
+            <Update>
+              <targetHref/>
+              <Change>
+                <Placemark targetId="train_placemark">
+                  <LineString>
+                    <coordinates>${segmentCoords}</coordinates>
+                  </LineString>
+                </Placemark>
+              </Change>
+            </Update>
+          </gx:AnimatedUpdate>
+        `;
+            }
+        }
+
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"
+     xmlns:gx="http://www.google.com/kml/ext/2.2">
+  <Document>
+    <name>火车模拟游览</name>
+    <Style id="train_style">
+      <LineStyle>
+        <color>ffffffff</color>
+        <width>8</width>
+      </LineStyle>
+    </Style>
+    <Style id="track_style">
+      <LineStyle>
+        <color>ff888888</color>
+        <width>2</width>
+      </LineStyle>
+    </Style>
+
+    <Placemark id="full_track">
+      <name>完整线路</name>
+      <styleUrl>#track_style</styleUrl>
+      <LineString>
+        <tessellate>1</tessellate>
+        <coordinates>${coords.map(p => `${p.lon},${p.lat},${p.alt}`).join(' ')}</coordinates>
+      </LineString>
+    </Placemark>
+
+    <Placemark id="train_placemark">
+      <name>火车</name>
+      <styleUrl>#train_style</styleUrl>
+      <LineString>
+        <altitudeMode>relativeToGround</altitudeMode>
+        <coordinates>${coords[0].lon},${coords[0].lat},${coords[0].alt} ${coords[1].lon},${coords[1].lat},${coords[1].alt}</coordinates>
+      </LineString>
+    </Placemark>
+
+    <gx:Tour>
+      <name>播放火车模拟</name>
+      <gx:Playlist>
+        ${tourPlaylist}
+      </gx:Playlist>
+    </gx:Tour>
+  </Document>
+</kml>`;
+    }
+</script>
+</body>
+</html>

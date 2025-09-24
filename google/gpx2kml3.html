@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <title>GPX → KML (路径+轨迹+游览自动同步)</title>
+    <style>
+        body { font-family: system-ui, Arial; margin: 24px; line-height: 1.5; }
+        .btn { padding: 6px 12px; margin: 4px; border: 1px solid #888; background: #f5f5f5; cursor: pointer; }
+        .out { white-space: pre-wrap; font-family: monospace; background: #fafafa; padding: 8px; border: 1px dashed #ddd; }
+    </style>
+</head>
+<body>
+<h2>GPX → KML 转换器（路径 + gx:Track + gx:Tour 自动同步）</h2>
+
+<input type="file" id="file" accept=".gpx" />
+<br><br>
+<label>名称：<input type="text" id="name" value="我的轨迹" /></label>
+<label>倾角 tilt：<input type="number" id="tilt" value="35" /></label>
+<label>范围 range：<input type="number" id="range" value="2000" /></label>
+<label>每段时长(s)：<input type="number" id="dur" value="2.5" step="0.1" /></label>
+<label>轨迹显露步长：<input type="number" id="revealStep" value="5" min="1" /></label>
+<label>结束停留时长(s)：<input type="number" id="endPause" value="3" min="0" step="0.5" /></label>
+<br><br>
+<button class="btn" id="gen">生成 KML</button>
+
+<div id="msg" class="out"></div>
+
+AE 操作步骤：飞行 + 路径渐变
+<br>
+1. 准备素材
+
+在 Google Earth Pro 里录制 Tour（相机飞行），导出为视频（MP4/AVI）。
+
+同时导出一份 KML/GPX 轨迹，方便在 AE 里对齐路径。
+<br>
+2. 导入 AE
+
+打开 AE，新建一个项目。
+
+导入 Google Earth 的飞行视频。
+
+拖到时间轴，作为背景层。
+<br>
+3. 新建路径层
+
+新建一个 纯色层（颜色随意，建议白色或亮色）。
+
+选中纯色层，用 钢笔工具 沿着视频里的轨迹描绘路径。
+
+如果轨迹很长，可以先在 Google Earth 里截图作为参考。
+
+确保路径和视频里的线路对齐。
+<br>
+4. 添加描边效果
+
+选中纯色层，菜单栏 → 效果 → 生成 → Stroke（描边）。
+
+在 Stroke 设置里：
+
+Path：选择你刚才画的 Mask。
+
+Paint Style：选 “On Transparent” 或 “Reveal Original Image”。
+
+Brush Size：调整线条粗细。
+
+End%：关键帧从 0% → 100%，就能实现“路径逐渐显露”。
+<br>
+5. 同步飞行与路径
+
+把 Stroke 的动画时长调整到和视频飞行时长一致。
+
+如果需要更精确，可以在时间轴上对齐关键点（比如转弯处、停留点）。
+<br>
+6. 增强效果（可选）
+
+给路径加 Glow（辉光），做出航迹线效果。
+
+用 渐变描边，让路径从亮色过渡到透明。
+
+用 Trim Paths（修剪路径） 替代 Stroke，控制更灵活。
+<br>
+7. 导出
+
+预览确认无误后，菜单 → 合成 → 添加到渲染队列。
+
+
+<script>
+    document.getElementById('gen').onclick = async () => {
+        const f = document.getElementById('file').files[0];
+        if (!f) { alert("请先选择 GPX 文件"); return; }
+        const text = await f.text();
+        const xml = new DOMParser().parseFromString(text, "application/xml");
+        const pts = Array.from(xml.getElementsByTagName("trkpt")).map(pt => {
+            const lat = pt.getAttribute("lat"), lon = pt.getAttribute("lon");
+            const ele = pt.getElementsByTagName("ele")[0]?.textContent;
+            const time = pt.getElementsByTagName("time")[0]?.textContent;
+            return {lat, lon, ele, time};
+        });
+
+        const name = document.getElementById('name').value || "轨迹";
+        const tilt = document.getElementById('tilt').value;
+        const range = document.getElementById('range').value;
+        const dur = document.getElementById('dur').value;
+        const step = parseInt(document.getElementById('revealStep').value) || 5;
+        const endPause = parseFloat(document.getElementById('endPause').value) || 0;
+
+        const trackId = "track_" + Date.now();
+
+        // 静态路径
+        const coords = pts.map(p => `${p.lon},${p.lat},${p.ele||0}`).join(" ");
+        const linePlacemark = `
+    <Placemark>
+      <name>${name} 路径</name>
+      <Style><LineStyle><color>ff00aaff</color><width>4</width></LineStyle></Style>
+      <LineString><tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString>
+    </Placemark>`;
+
+        // 动态轨迹（带时间戳）
+        const trackPlacemark = `
+    <Placemark id="${trackId}">
+      <name>${name} 轨迹</name>
+      <Style><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/shapes/track.png</href></Icon></IconStyle></Style>
+      <gx:Track>
+        <altitudeMode>absolute</altitudeMode>
+        ${pts.map(p => `<when>${p.time||''}</when><gx:coord>${p.lon} ${p.lat} ${p.ele||0}</gx:coord>`).join("\n")}
+      </gx:Track>
+    </Placemark>`;
+
+        // 计算航向角
+        function bearing(p1, p2){
+            if (!p2) return 0;
+            const toRad=Math.PI/180,toDeg=180/Math.PI;
+            const φ1=p1.lat*toRad, φ2=p2.lat*toRad;
+            const λ1=p1.lon*toRad, λ2=p2.lon*toRad;
+            const y=Math.sin(λ2-λ1)*Math.cos(φ2);
+            const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
+            return ((Math.atan2(y,x)*toDeg)+360)%360;
+        }
+
+        // Tour
+        let playlist = "";
+
+        // 自动触发轨迹回放
+        playlist += `
+    <gx:AnimatedUpdate>
+      <gx:duration>0.1</gx:duration>
+      <Update>
+        <targetHref/>
+        <Change>
+          <Placemark targetId="${trackId}">
+            <gx:Track>
+              <altitudeMode>absolute</altitudeMode>
+              ${pts.map(p => `<when>${p.time||''}</when><gx:coord>${p.lon} ${p.lat} ${p.ele||0}</gx:coord>`).join("\n")}
+            </gx:Track>
+          </Placemark>
+        </Change>
+      </Update>
+    </gx:AnimatedUpdate>`;
+
+        pts.forEach((p,i,arr)=>{
+            if (i % step !== 0 && i !== arr.length-1) return;
+            const hdg = bearing(p, arr[i+1]);
+            playlist += `
+    <gx:FlyTo>
+      <gx:duration>${dur}</gx:duration>
+      <gx:flyToMode>smooth</gx:flyToMode>
+      <LookAt>
+        <longitude>${p.lon}</longitude><latitude>${p.lat}</latitude><altitude>${p.ele||0}</altitude>
+        <heading>${hdg.toFixed(2)}</heading><tilt>${tilt}</tilt><range>${range}</range>
+        <altitudeMode>absolute</altitudeMode>
+      </LookAt>
+    </gx:FlyTo>`;
+        });
+
+        if (endPause > 0) {
+            playlist += `<gx:Wait><gx:duration>${endPause}</gx:duration></gx:Wait>`;
+        }
+
+        const tour = `
+    <gx:Tour>
+      <name>${name} 游览</name>
+      <gx:Playlist>${playlist}</gx:Playlist>
+    </gx:Tour>`;
+
+        const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+<Document>
+  <name>${name}</name>
+  ${linePlacemark}
+  ${trackPlacemark}
+  ${tour}
+</Document>
+</kml>`;
+
+        const blob = new Blob([kml], {type:"application/vnd.google-earth.kml+xml"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = name+"_tour.kml"; a.click();
+        URL.revokeObjectURL(url);
+
+        document.getElementById('msg').textContent = "已生成：路径 + 轨迹 + 游览（双击 Tour 即可边飞行边画线）。";
+    };
+</script>
+</body>
+</html>

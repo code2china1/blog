@@ -1,0 +1,374 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>GPX → KML 渐进延长红线（专业版）</title>
+<style>
+    :root { --fg:#1f2328; --mut:#6a737d; --bd:#d0d7de; --bg:#fff; }
+    body { font:14px/1.6 system-ui,-apple-system,Segoe UI,"PingFang SC",Arial,sans-serif; padding:20px; color:var(--fg); background:var(--bg); }
+    h1 { font-size:18px; margin:0 0 12px; }
+    fieldset { border:1px solid var(--bd); padding:12px; margin:12px 0; }
+    legend { padding:0 6px; color:var(--mut); }
+    label { display:inline-flex; align-items:center; gap:6px; margin:6px 12px 6px 0; }
+    input[type="number"], input[type="text"], select { height:32px; padding:0 8px; border:1px solid var(--bd); border-radius:6px; }
+    input[type="number"] { width:120px; }
+    #color { width:130px; }
+    #kmlColor { width:120px; }
+    button { padding:8px 14px; border:1px solid var(--bd); background:#f6f8fa; border-radius:6px; cursor:pointer; }
+    button:hover { background:#eef1f4; }
+    #log { white-space:pre-wrap; color:var(--mut); margin-top:8px; }
+    a#dl { margin-left:10px; }
+    .row { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+</style>
+
+<h1>GPX → KML 渐进延长红线（居中跟随）</h1>
+
+<fieldset>
+    <legend>文件与导出</legend>
+    <div class="row">
+        <input type="file" id="file" accept=".gpx,application/gpx+xml,application/xml" />
+        <button id="go">生成 KML</button>
+        <a id="dl" style="display:none">下载 KML</a>
+    </div>
+    <div id="log"></div>
+</fieldset>
+
+<fieldset>
+    <legend>速度与抽样</legend>
+    <div class="row">
+        <label><b>速度</b> km/h <input id="speed" type="number" value="60" min="1" step="1"></label>
+        <label><b>抽样步进</b> <input id="step" type="number" value="1" min="1" step="1" title="每 N 个点取 1 个"></label>
+        <label><b>分段细分倍数</b> <input id="subdivide" type="number" value="3" min="1" max="20" step="1" title="将每个轨迹段再等分，提升丝滑度"></label>
+    </div>
+    <div class="row">
+        <label><b>段最小时长</b> 秒 <input id="segMin" type="number" value="0.12" min="0.05" step="0.01"></label>
+        <label><b>段最大时长</b> 秒 <input id="segMax" type="number" value="1.50" min="0.2" step="0.1"></label>
+        <label><b>缓动曲线</b>
+            <select id="easing">
+                <option value="linear" selected>线性</option>
+                <option value="easeIn">缓入</option>
+                <option value="easeOut">缓出</option>
+                <option value="easeInOut">缓入缓出</option>
+            </select>
+        </label>
+    </div>
+    <div class="row" style="color:#9aa1a7;">
+        <span>建议：高密轨迹用“抽样步进 5~20 + 细分 2~5”可显著减少抖动并保持顺滑。</span>
+    </div>
+</fieldset>
+
+<fieldset>
+    <legend>线条与高度</legend>
+    <div class="row">
+        <label><b>线宽</b> <input id="width" type="number" value="5" min="1" step="1"></label>
+        <label><b>KML 颜色 AABBGGRR</b> <input id="kmlColor" type="text" value="ff0000ff" title="KML 颜色为 AABBGGRR"></label>
+        <label><b>可视化颜色</b> <input id="color" type="color" value="#ff0000" title="仅用于预览转 KML 不用"></label>
+        <label><b>高度模式</b>
+            <select id="altMode">
+                <option value="auto" selected>自动（有海拔→absolute）</option>
+                <option value="absolute">absolute</option>
+                <option value="clampToGround">clampToGround</option>
+            </select>
+        </label>
+    </div>
+</fieldset>
+
+<fieldset>
+    <legend>镜头跟随（始终居中）</legend>
+    <div class="row">
+        <label><b>range</b> 米 <input id="range" type="number" value="800" min="100" step="50"></label>
+        <label><b>tilt</b> 度 <input id="tilt" type="number" value="65" min="0" max="90"></label>
+        <label><b>镜头朝向</b>
+            <select id="camHeading">
+                <option value="north" selected>固定北</option>
+                <option value="follow">随路径</option>
+            </select>
+        </label>
+    </div>
+</fieldset>
+
+<fieldset>
+    <legend>可选屏幕标题</legend>
+    <div class="row">
+        <label><b>启用</b> <input id="titleOn" type="checkbox"></label>
+        <label><b>标题文字</b> <input id="titleText" type="text" value="路线演示"></label>
+        <label><b>字体缩放</b> <input id="titleScale" type="number" value="1.2" min="0.5" step="0.1"></label>
+        <label><b>距顶像素</b> <input id="titleTop" type="number" value="20" min="0" step="1"></label>
+    </div>
+</fieldset>
+
+<script>
+    // ---------- Geo ----------
+    const toRad = d => d * Math.PI/180, toDeg = r => r * 180/Math.PI;
+    function haversine(a, b) {
+        const R=6371000, φ1=toRad(a.lat), φ2=toRad(b.lat);
+        const dφ=toRad(b.lat-a.lat), dλ=toRad(b.lon-a.lon);
+        const s=Math.sin(dφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
+        return 2 * R * Math.asin(Math.sqrt(s));
+    }
+    function parseGPX(text) {
+        const dom = new DOMParser().parseFromString(text, 'application/xml');
+        const trkpts = [];
+        const walker = document.createTreeWalker(dom, NodeFilter.SHOW_ELEMENT, {
+            acceptNode: n => n.localName === 'trkpt' ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
+        });
+        let n; while ((n = walker.nextNode())) trkpts.push(n);
+        return trkpts.map(pt => {
+            const lat = parseFloat(pt.getAttribute('lat'));
+            const lon = parseFloat(pt.getAttribute('lon'));
+            let ele = 0;
+            for (const c of pt.children) if (c.localName === 'ele') ele = parseFloat(c.textContent.trim() || '0');
+            return { lat, lon, ele: isFinite(ele) ? ele : 0 };
+        });
+    }
+    function sample(pts, step) {
+        if (step <= 1) return pts.slice();
+        const out = [];
+        for (let i = 0; i < pts.length; i += step) out.push(pts[i]);
+        if (out[out.length-1] !== pts[pts.length-1]) out.push(pts[pts.length-1]);
+        return out;
+    }
+    function totalLength(pts) {
+        let s=0; for (let i=1;i<pts.length;i++) s+=haversine(pts[i-1], pts[i]); return s;
+    }
+    function bearing(a, b) {
+        const φ1 = toRad(a.lat), φ2 = toRad(b.lat), Δλ = toRad(b.lon - a.lon);
+        const y = Math.sin(Δλ) * Math.cos(φ2);
+        const x = Math.cos(φ1) * Math.cos(φ2) * Math.cos(Δλ) - Math.sin(φ1) * Math.sin(φ2);
+        return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    // ---------- Easing ----------
+    const EASE = {
+        linear: t => t,
+        easeIn: t => t*t,
+        easeOut: t => 1 - Math.pow(1 - t, 2),
+        easeInOut: t => t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2
+    };
+
+    // ---------- Builders ----------
+    function kmlHeader(name, lineColor, width) {
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+  <Document>
+    <name>${name}</name>
+    <Style id="progressLine">
+      <LineStyle>
+        <color>${lineColor}</color><!-- AABBGGRR -->
+        <width>${width}</width>
+      </LineStyle>
+    </Style>`;
+    }
+    function screenOverlay(title, scale=1.2, top=20) {
+        const safe = title.replace(/[<>&]/g, s => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[s]));
+        return `
+    <Folder>
+      <name>标题</name>
+      <ScreenOverlay>
+        <name>${safe}</name>
+        <Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon>
+        <overlayXY x="0" y="1" xunits="fraction" yunits="fraction"/>
+        <screenXY x="0.05" y="${(1 - Math.min(0.95, top/1000)).toFixed(3)}" xunits="fraction" yunits="fraction"/>
+        <rotation>0</rotation>
+        <size x="0" y="0" xunits="pixels" yunits="pixels"/>
+      </ScreenOverlay>
+      <Style>
+        <ListStyle><listItemType>check</listItemType><bgColor>00ffffff</bgColor></ListStyle>
+      </Style>
+      <Placemark>
+        <name>${safe}</name>
+        <Style><LabelStyle><scale>${scale}</scale><color>ff222222</color></LabelStyle>
+          <IconStyle><scale>0</scale></IconStyle>
+        </Style>
+        <Point><coordinates>0,0,0</coordinates></Point>
+      </Placemark>
+    </Folder>`;
+    }
+    function kmlFooter(){ return `\n  </Document>\n</kml>`; }
+
+    function initialLinePlacemark(first, altitudeMode='clampToGround') {
+        return `
+    <Placemark>
+      <name>路线</name>
+      <styleUrl>#progressLine</styleUrl>
+      <LineString id="pathLine">
+        <tessellate>1</tessellate>
+        <altitudeMode>${altitudeMode}</altitudeMode>
+        <coordinates>${first.lon},${first.lat},0</coordinates>
+      </LineString>
+    </Placemark>`;
+    }
+
+    function buildCoordsSlice(pts, count, altitudeMode) {
+        const zs = altitudeMode === 'absolute';
+        const arr = [];
+        for (let i = 0; i < count; i++) {
+            const p = pts[i];
+            const z = zs ? (p.ele || 0) : 0;
+            arr.push(`${p.lon},${p.lat},${z}`);
+        }
+        return arr.join(' ');
+    }
+
+    // 生成 Tour：先就位，再逐步“延长红线 + 跟随前端”
+    function buildProgressTour(name, pts, cfg) {
+        const {
+            speedKmh, range, tilt, segMin, segMax, easing, altMode, camHeading, subdivide
+        } = cfg;
+        const v = Math.max(0.5, speedKmh/3.6); // m/s
+        const E = EASE[easing] || EASE.linear;
+
+        // 预计算每段距离与总长
+        const segs = [];
+        let total = 0;
+        for (let i=1;i<pts.length;i++) {
+            const d = haversine(pts[i-1], pts[i]);
+            segs.push(d); total += d;
+        }
+
+        const items = [];
+        // 首帧：镜头就位
+        items.push(`
+      <gx:FlyTo>
+        <gx:duration>0.8</gx:duration>
+        <gx:flyToMode>smooth</gx:flyToMode>
+        <LookAt>
+          <longitude>${pts[0].lon}</longitude>
+          <latitude>${pts[0].lat}</latitude>
+          <range>${Math.max(100, range|0)}</range>
+          <tilt>${Math.max(0, Math.min(90, tilt|0))}</tilt>
+          <heading>${camHeading==='follow' && pts.length>1 ? bearing(pts[0], pts[1]).toFixed(2) : 0}</heading>
+          <altitudeMode>${altMode}</altitudeMode>
+        </LookAt>
+      </gx:FlyTo>`.trim());
+
+        // 累积时间，按缓动分配
+        let cumDist = 0;
+        for (let i=1;i<pts.length;i++) {
+            const d = segs[i-1];
+            const nominal = d / v; // 线性时长
+            // 将该段细分为 m 份
+            const m = Math.max(1, subdivide|0);
+            for (let k=1;k<=m;k++) {
+                const t0 = (cumDist / total);
+                const t1 = ((cumDist + d * (k/m)) / total);
+                const w = Math.max(segMin, Math.min(segMax, (E(t1)-E(t0)) * (total / v)));
+                const count = i-1 + Math.ceil(k * (1/m)); // 至少包含当前端点
+                const coords = buildCoordsSlice(pts, Math.max(2, i + (k===m?0:0)), altMode);
+
+                // 更新红线至当前细分位置（用端点累进，保持稳定）
+                items.push(`
+      <gx:AnimatedUpdate>
+        <gx:duration>0</gx:duration>
+        <Update>
+          <Change>
+            <LineString targetId="pathLine">
+              <coordinates>${coords}</coordinates>
+            </LineString>
+          </Change>
+        </Update>
+      </gx:AnimatedUpdate>`.trim());
+
+                // 镜头跟随到当前端点 i（保持居中）
+                const head = camHeading==='follow'
+                    ? (i < pts.length ? bearing(pts[i-1], pts[i]) : (i>1?bearing(pts[i-2], pts[i-1]):0))
+                    : 0;
+                const p = pts[i];
+                items.push(`
+      <gx:FlyTo>
+        <gx:duration>${w.toFixed(3)}</gx:duration>
+        <gx:flyToMode>smooth</gx:flyToMode>
+        <LookAt>
+          <longitude>${p.lon}</longitude>
+          <latitude>${p.lat}</latitude>
+          <range>${Math.max(100, range|0)}</range>
+          <tilt>${Math.max(0, Math.min(90, tilt|0))}</tilt>
+          <heading>${camHeading==='follow'? head.toFixed(2) : 0}</heading>
+          <altitudeMode>${altMode}</altitudeMode>
+        </LookAt>
+      </gx:FlyTo>`.trim());
+            }
+            cumDist += d;
+        }
+
+        return `
+    <gx:Tour>
+      <name>${name}</name>
+      <gx:Playlist>
+${items.join('\n')}
+      </gx:Playlist>
+    </gx:Tour>`;
+    }
+
+    function decideAltitudeMode(pts, mode) {
+        if (mode === 'absolute' || mode === 'clampToGround') return mode;
+        const hasEle = pts.some(p => Number.isFinite(p.ele) && Math.abs(p.ele) > 0.0001);
+        return hasEle ? 'absolute' : 'clampToGround';
+    }
+
+    // ---------- UI ----------
+    const $ = s => document.querySelector(s);
+    const log = t => $('#log').textContent = t;
+
+    $('#go').addEventListener('click', async () => {
+        const f = $('#file').files[0];
+        if (!f) return alert('请选择 GPX 文件');
+
+        const txt = await f.text();
+        let pts = parseGPX(txt);
+        if (pts.length < 2) return alert('轨迹点不足');
+
+        // 抽样
+        const step = Math.max(1, parseInt($('#step').value || '1', 10));
+        pts = sample(pts, step);
+
+        // 参数
+        const speed = Math.max(1, parseFloat($('#speed').value || '60'));
+        const subdivide = Math.max(1, parseInt($('#subdivide').value || '3', 10));
+        const segMin = Math.max(0.05, parseFloat($('#segMin').value || '0.12'));
+        const segMax = Math.max(segMin, parseFloat($('#segMax').value || '1.5'));
+        const easing = $('#easing').value;
+        const width = Math.max(1, parseInt($('#width').value || '5', 10));
+        const kmlColor = ($('#kmlColor').value || 'ff0000ff').trim();
+        const range = parseFloat($('#range').value || '800');
+        const tilt = parseFloat($('#tilt').value || '65');
+        const camHeading = $('#camHeading').value;
+        const altMode = decideAltitudeMode(pts, $('#altMode').value);
+
+        // 头部与初始线
+        const name = f.name.replace(/\.[^.]+$/, '') + ' 渐进红线';
+        let kml = kmlHeader(name, kmlColor, width);
+        kml += initialLinePlacemark(pts[0], altMode);
+
+        // 可选标题（用 ScreenOverlay + 标签变通）
+        if ($('#titleOn').checked) {
+            kml += screenOverlay($('#titleText').value || '路线演示', parseFloat($('#titleScale').value || '1.2'), parseInt($('#titleTop').value || '20', 10));
+        }
+
+        // Tour
+        kml += buildProgressTour('沿轨迹渐进延长（双击播放）', pts, {
+            speedKmh: speed, range, tilt, segMin, segMax, easing, altMode, camHeading, subdivide
+        });
+
+        kml += kmlFooter();
+
+        // 导出
+        const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
+        const url = URL.createObjectURL(blob);
+        const a = $('#dl');
+        a.href = url;
+        a.download = `${name}.kml`;
+        a.style.display = 'inline-block';
+        a.textContent = '下载 KML';
+
+        // 统计
+        const lenKm = (totalLength(pts)/1000).toFixed(2);
+        log(`采样点数: ${pts.length}
+轨迹长度: ${lenKm} km
+速度: ${speed} km/h
+细分倍数: ${subdivide}
+缓动: ${easing}
+段时长: [${segMin} ~ ${segMax}] 秒
+镜头: range ${range} m, tilt ${tilt}°, 朝向 ${camHeading==='follow'?'随路径':'固定北'}
+高度模式: ${altMode}
+提示: 在 Google Earth 打开后，双击“沿轨迹渐进延长（双击播放）”播放；红线将逐步延长且始终居中跟随。`);
+    });
+</script>
