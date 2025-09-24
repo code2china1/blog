@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8" />
+  <title>轨迹飞越 (Esri 卫星 + 3D 地形)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    html,body { margin:0; height:100%; background:#000; font:14px/1.4 system-ui; color:#fff; }
+    #map { position:absolute; inset:0; }
+    #panel { position:absolute; top:12px; left:12px; background:rgba(0,0,0,0.65); padding:12px; border-radius:10px; width:340px; }
+    label { display:block; margin-top:8px; font-weight:600; }
+    input,button { width:100%; margin-top:4px; }
+    button { padding:8px; border:none; border-radius:6px; cursor:pointer; font-weight:700; }
+    .primary { background:#4caf50; color:#000; }
+    .danger { background:#ef5350; color:#000; }
+    .small { font-size:12px; opacity:0.85; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <label>上传 GPX</label>
+  <input id="fileInput" type="file" accept=".gpx" />
+
+  <label>速度 (米/秒)</label>
+  <input id="speed" type="range" min="50" max="2000" step="50" value="200" />
+  <div class="small">当前：<span id="speedVal">200</span> m/s</div>
+
+  <label>俯仰角 (度)</label>
+  <input id="pitch" type="range" min="0" max="80" step="1" value="60" />
+  <div class="small">当前：<span id="pitchVal">60</span>°</div>
+
+  <label>缩放级别</label>
+  <input id="zoom" type="range" min="12" max="18" step="0.1" value="15" />
+  <div class="small">当前：<span id="zoomVal">15</span></div>
+  <label>方向更新时间间隔 (毫秒)</label>
+  <input id="bearingInterval" type="range" min="100" max="2000" step="100" value="500" />
+  <div class="small">当前：<span id="bearingIntervalVal">500</span> ms</div>
+
+  <label>方向更新最小距离 (米)</label>
+  <input id="bearingDist" type="range" min="1" max="10000" step="1" value="100" />
+  <div class="small">当前：<span id="bearingDistVal">100</span> m</div>
+
+  <label>头部长度 (米)</label>
+  <input id="headLength" type="range" min="5" max="10000" step="5" value="20" />
+  <div class="small">当前：<span id="headLengthVal">20</span> m</div>
+
+  <button id="startBtn" class="primary" disabled>开始飞越</button>
+  <button id="stopBtn" class="danger" disabled>停止并下载</button>
+  <div class="small">状态：<span id="status">等待 GPX</span></div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
+<script>
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: {
+      version: 8,
+      sources: {
+        "esri-imagery": {
+          type: "raster",
+          tiles: [
+            "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+          ],
+          tileSize: 256,
+          attribution: "Source: Esri, Maxar, Earthstar Geographics, GIS User Community"
+        },
+        "terrain": {
+          type: "raster-dem",
+          url: "https://demotiles.maplibre.org/terrain-tiles/tiles.json",
+          tileSize: 256
+        }
+      },
+      layers: [
+        { id: "esri-imagery", type: "raster", source: "esri-imagery" }
+      ]
+    },
+    center: [114.1695, 22.3193],
+    zoom: 12,
+    pitch: 60,
+    preserveDrawingBuffer: true
+  });
+
+  map.on('load', () => {
+    map.setTerrain({ source: "terrain", exaggeration: 1.5 });
+    map.addLayer({
+      id:"sky",
+      type:"sky",
+      source:"esri-imagery", // ✅ 必须指定 source
+      paint:{ "sky-type":"atmosphere" }
+    });
+
+    // 三段路线
+    ["past","head","future"].forEach(id=>{
+      map.addSource("route-"+id,{type:"geojson",data:{type:"Feature",geometry:{type:"LineString",coordinates:[]}}});
+    });
+    map.addLayer({id:"route-past",type:"line",source:"route-past",paint:{"line-color":"#ff5252","line-width":4}});
+    map.addLayer({id:"route-future",type:"line",source:"route-future",paint:{"line-color":"#ffee58","line-width":3}});
+    map.addLayer({id:"route-head",type:"line",source:"route-head",paint:{"line-color":"#ffffff","line-width":6}});
+  });
+  // ---------- 工具函数 ----------
+  function parseGPX(xml){
+    const doc=new DOMParser().parseFromString(xml,"application/xml");
+    return Array.from(doc.getElementsByTagName("trkpt"))
+            .map(pt=>({lat:+pt.getAttribute("lat"),lng:+pt.getAttribute("lon")}));
+  }
+
+  function haversine(a,b){
+    const R=6371000,toRad=d=>d*Math.PI/180;
+    const dLat=toRad(b.lat-a.lat),dLng=toRad(b.lng-a.lng);
+    const lat1=toRad(a.lat),lat2=toRad(b.lat);
+    const h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
+    return 2*R*Math.asin(Math.sqrt(h));
+  }
+
+  function bearing(a,b){
+    const φ1=a.lat*Math.PI/180,φ2=b.lat*Math.PI/180,λ1=a.lng*Math.PI/180,λ2=b.lng*Math.PI/180;
+    const y=Math.sin(λ2-λ1)*Math.cos(φ2);
+    const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
+    return (Math.atan2(y,x)*180/Math.PI+360)%360;
+  }
+
+  // 根据距离切分出一个点
+  function sliceLineByDistance(coords, dist) {
+    let acc = 0;
+    for (let i=1;i<coords.length;i++) {
+      const d = haversine(coords[i-1], coords[i]);
+      if (acc + d >= dist) {
+        const frac = (dist - acc) / d;
+        return {
+          lat: coords[i-1].lat + (coords[i].lat - coords[i-1].lat) * frac,
+          lng: coords[i-1].lng + (coords[i].lng - coords[i-1].lng) * frac
+        };
+      }
+      acc += d;
+    }
+    return coords[coords.length-1];
+  }
+
+  // 更新三段路线：红/白/黄
+  function updateRouteSegments(coords, dist, headLength=20) {
+    const total = coords.reduce((s,_,i)=> i? s+haversine(coords[i-1],coords[i]):0,0);
+    const headStartDist = Math.max(0, dist - headLength);
+
+    const pastEnd = sliceLineByDistance(coords, headStartDist);
+    const cur = sliceLineByDistance(coords, dist);
+
+    // 红色：起点 -> pastEnd
+    const pastLine = { type:"Feature", geometry:{ type:"LineString", coordinates: [] } };
+    pastLine.geometry.coordinates.push([coords[0].lng, coords[0].lat]);
+    let acc=0;
+    for (let i=1;i<coords.length;i++){
+      const d=haversine(coords[i-1],coords[i]);
+      if(acc+d < headStartDist){
+        pastLine.geometry.coordinates.push([coords[i].lng, coords[i].lat]);
+      } else {
+        pastLine.geometry.coordinates.push([pastEnd.lng,pastEnd.lat]);
+        break;
+      }
+      acc+=d;
+    }
+
+    // 白色：pastEnd -> cur
+    const headLine = {
+      type:"Feature",
+      geometry:{ type:"LineString", coordinates:[[pastEnd.lng,pastEnd.lat],[cur.lng,cur.lat]] }
+    };
+
+    // 黄色：cur -> 终点
+    const futureLine = { type:"Feature", geometry:{ type:"LineString", coordinates:[[cur.lng,cur.lat]] } };
+    acc=0;
+    for (let i=1;i<coords.length;i++){
+      acc+=haversine(coords[i-1],coords[i]);
+      if(acc > dist){
+        futureLine.geometry.coordinates.push([coords[i].lng,coords[i].lat]);
+      }
+    }
+
+    map.getSource("route-past").setData(pastLine);
+    map.getSource("route-head").setData(headLine);
+    map.getSource("route-future").setData(futureLine);
+
+    return cur;
+  }
+  let route=[],anim,recorder,chunks=[];
+  let lastBearing=0,lastBearingUpdate=0,lastBearingPos=null;
+
+  function startFlyover(coords){
+    const speed=+el.speed.value,zoom=+el.zoom.value,pitch=+el.pitch.value;
+    const bearingInterval=+el.bearingInterval.value,bearingDist=+el.bearingDist.value;
+    const headLength=+el.headLength.value;
+
+    // 计算总距离和分段
+    const segLen=[];let total=0;
+    for(let i=1;i<coords.length;i++){const d=haversine(coords[i-1],coords[i]);segLen.push(d);total+=d;}
+    const duration=(total/speed)*1000;
+    const start=performance.now();
+    startRecording();
+
+    function step(now){
+      const t=Math.min(1,(now-start)/duration),dist=t*total;
+      let acc=0,idx=0;
+      for(let i=0;i<segLen.length;i++){if(acc+segLen[i]>=dist){idx=i;break;}acc+=segLen[i];}
+      const frac=segLen[idx] ? (dist-acc)/segLen[idx] : 0;
+
+      const cur=updateRouteSegments(coords, dist, headLength);
+
+      // 方向更新
+      const brg=bearing(coords[idx], coords[idx+1]||coords[idx]);
+      let useBearing=lastBearing;
+      if((now-lastBearingUpdate > bearingInterval) ||
+              (lastBearingPos && haversine(lastBearingPos,cur) > bearingDist)){
+        useBearing=brg;
+        lastBearing=brg;
+        lastBearingUpdate=now;
+        lastBearingPos=cur;
+      }
+
+      map.easeTo({
+        center:[cur.lng,cur.lat],
+        zoom,pitch,
+        bearing:useBearing,
+        duration:100,
+        easing:n=>n
+      });
+
+      if(t<1 && recorder){
+        anim=requestAnimationFrame(step);
+      } else {
+        stopRecording(true);
+        el.status.textContent='完成飞越';
+        el.stop.disabled=false;
+      }
+    }
+    anim=requestAnimationFrame(step);
+  }
+
+  // ---------- 录制 ----------
+  function startRecording(){
+    const stream=map.getCanvas().captureStream(30);
+    recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9'});
+    chunks=[];
+    recorder.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
+    recorder.onstop=()=>{
+      const blob=new Blob(chunks,{type:'video/webm'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;
+      a.download='flyover.webm';
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(url),5000);
+    };
+    recorder.start(100);
+    el.status.textContent='录制中…';
+    el.stop.disabled=false;
+  }
+
+  function stopRecording(auto=false){
+    if(anim) cancelAnimationFrame(anim);
+    if(recorder && recorder.state!=='inactive') recorder.stop();
+    recorder=null;
+    if(!auto) el.status.textContent='已停止，文件已下载';
+    el.stop.disabled=true;
+    el.start.disabled=false;
+  }
+
+  // ---------- UI 绑定 ----------
+  const el={
+    file:document.getElementById('fileInput'),
+    speed:document.getElementById('speed'),
+    pitch:document.getElementById('pitch'),
+    zoom:document.getElementById('zoom'),
+    bearingInterval:document.getElementById('bearingInterval'),
+    bearingDist:document.getElementById('bearingDist'),
+    headLength:document.getElementById('headLength'),
+    speedVal:document.getElementById('speedVal'),
+    pitchVal:document.getElementById('pitchVal'),
+    zoomVal:document.getElementById('zoomVal'),
+    bearingIntervalVal:document.getElementById('bearingIntervalVal'),
+    bearingDistVal:document.getElementById('bearingDistVal'),
+    headLengthVal:document.getElementById('headLengthVal'),
+    start:document.getElementById('startBtn'),
+    stop:document.getElementById('stopBtn'),
+    status:document.getElementById('status')
+  };
+
+  ['speed','pitch','zoom','bearingInterval','bearingDist','headLength'].forEach(id=>{
+    const input=el[id],label=el[id+'Val'];
+    input.addEventListener('input',()=>label.textContent=input.value);
+  });
+
+  el.file.addEventListener('change',async e=>{
+    const file=e.target.files?.[0]; if(!file) return;
+    const text=await file.text();
+    route=parseGPX(text);
+    if(route.length<2){ el.status.textContent='GPX 点太少'; return; }
+    el.status.textContent=`已加载 ${route.length} 点`;
+    el.start.disabled=false;
+  });
+
+  el.start.addEventListener('click',()=>{
+    if(route.length<2){ el.status.textContent='请先上传 GPX'; return; }
+    el.start.disabled=true;
+    el.stop.disabled=false;
+    el.status.textContent='飞越进行中…';
+    startFlyover(route);
+  });
+
+  el.stop.addEventListener('click',()=>stopRecording(false));
+</script>
+</body>
+</html>
