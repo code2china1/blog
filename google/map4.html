@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8" />
+  <title>轨迹飞越 (Esri 卫星 + 3D 地形)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    html,body { margin:0; height:100%; background:#000; font:14px/1.4 system-ui; color:#fff; }
+    #map { position:absolute; inset:0; }
+    #panel { position:absolute; top:12px; left:12px; background:rgba(0,0,0,0.65); padding:12px; border-radius:10px; width:340px; max-height: calc(100% - 24px); overflow-y: auto; }
+    label { display:block; margin-top:8px; font-weight:600; }
+    input,button,select { width:100%; margin-top:4px; }
+    button { padding:8px; border:none; border-radius:6px; cursor:pointer; font-weight:700; }
+    .primary { background:#4caf50; color:#000; }
+    .danger { background:#ef5350; color:#000; }
+    .small { font-size:12px; opacity:0.85; }
+    hr { margin: 12px 0; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.2); }
+    #checkbox-container { display: flex; align-items: center; margin-top: 4px;}
+    #checkbox-container input { width: auto; margin: 0 8px 0 0;}
+    textarea { width: 100%; height: 100px; margin-top: 4px; padding: 6px; border-radius: 6px; border: none; font: 14px/1.4 system-ui; box-sizing: border-box; }
+
+    /* 更新标记点和标签的样式 */
+    .custom-marker {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: pointer;
+      min-width: 100px;
+    }
+    .marker-dot {
+      background-color: #4CAF50;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 2px solid white;
+    }
+    .marker-content {
+      background-color: rgba(0, 0, 0, 0.5);
+      color: #fff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-top: 4px;
+      white-space: nowrap;
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <label>上传文件</label>
+  <input id="fileInput" type="file" accept=".gpx,.kml" />
+
+  <label>文件格式</label>
+  <select id="formatSelect">
+    <option value="gpx">GPX</option>
+    <option value="kml">KML</option>
+  </select>
+
+  <label>KML坐标转换</label>
+  <div id="checkbox-container">
+    <input type="checkbox" id="transformToWGS84" checked />
+    <label for="transformToWGS84" style="margin:0;">转换为WGS84</label>
+  </div>
+  <div class="small">中国的KML可能需要此选项</div>
+
+  <hr>
+
+  <label>输入坐标点 (JSON格式)</label>
+  <textarea id="coordinatesInput" placeholder='例如：[{"name":"鹰潭市", "location":"117.062,28.243", "desc":"介绍鹰潭的风土人情"}]'></textarea>
+  <button id="drawMarkersBtn" class="primary">在地图上显示地名</button>
+
+  <hr>
+
+  <label>分辨率</label>
+  <select id="resolutionSelect">
+    <option value="default">默认 (全屏)</option>
+    <option value="16:9">16:9 (横向)</option>
+    <option value="9:16">9:16 (纵向)</option>
+  </select>
+
+  <hr>
+
+  <label>地形夸大 (倍数)</label>
+  <input id="terrainExaggeration" type="range" min="1" max="50" step="1" value="36" />
+  <div class="small">当前：<span id="terrainExaggerationVal">36</span> 倍</div>
+
+  <label>速度 (米/秒)</label>
+  <input id="speed" type="range" min="50" max="10000" step="50" value="1150" />
+  <div class="small">当前：<span id="speedVal">1150</span> m/s</div>
+
+  <label>俯仰角 (度)</label>
+  <input id="pitch" type="range" min="0" max="80" step="1" value="76" />
+  <div class="small">当前：<span id="pitchVal">76</span>°</div>
+
+  <label>缩放级别</label>
+  <input id="zoom" type="range" min="12" max="18" step="0.1" value="15" />
+  <div class="small">当前：<span id="zoomVal">15</span></div>
+
+  <label>方向更新时间间隔 (毫秒)</label>
+  <input id="bearingInterval" type="range" min="100" max="50000" step="100" value="34300" />
+  <div class="small">当前：<span id="bearingIntervalVal">34300</span> ms</div>
+
+  <label>方向更新最小距离 (米)</label>
+  <input id="bearingDist" type="range" min="1" max="100000" step="1" value="6235" />
+  <div class="small">当前：<span id="bearingDistVal">6235</span> m</div>
+
+  <label>头部长度 (米)</label>
+  <input id="headLength" type="range" min="5" max="100000" step="5" value="215" />
+  <div class="small">当前：<span id="headLengthVal">215</span> m</div>
+
+  <button id="startBtn" class="primary" disabled>开始飞越</button>
+  <button id="stopBtn" class="danger" disabled>停止并下载</button>
+  <div class="small">状态：<span id="status">等待文件</span></div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
+<script>
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: {
+      version: 8,
+      sources: {
+        "esri-imagery": {
+          type: "raster",
+          tiles: [
+            "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+          ],
+          tileSize: 256,
+          attribution: "Source: Esri, Maxar, Earthstar Geographics, GIS User Community"
+        },
+        "terrain": {
+          type: "raster-dem",
+          url: "https://demotiles.maplibre.org/terrain-tiles/tiles.json",
+          tileSize: 256
+        }
+      },
+      layers: [
+        { id: "esri-imagery", type: "raster", source: "esri-imagery" }
+      ]
+    },
+    center: [114.1695, 22.3193],
+    // 使用初始化值
+    zoom: 15,
+    pitch: 76,
+    preserveDrawingBuffer: true
+  });
+
+  map.on('load', () => {
+    // 使用初始化值
+    map.setTerrain({ source: "terrain", exaggeration: 36 });
+    map.addLayer({
+      id:"sky",
+      type:"sky",
+      source:"esri-imagery",
+      paint:{ "sky-type":"atmosphere" }
+    });
+
+    ["past","head","future"].forEach(id=>{
+      map.addSource("route-"+id,{type:"geojson",data:{type:"Feature",geometry:{type:"LineString",coordinates:[]}}});
+    });
+    map.addLayer({id:"route-past",type:"line",source:"route-past",paint:{"line-color":"#ff5252","line-width":4}});
+    map.addLayer({id:"route-future",type:"line",source:"route-future",paint:{"line-color":"#ffee58","line-width":3}});
+    map.addLayer({id:"route-head",type:"line",source:"route-head",paint:{"line-color":"#ffffff","line-width":6}});
+  });
+
+  // ---------- 修复后的坐标转换函数 ----------
+  const x_pi = 3.14159265358979324 * 3000.0 / 180.0;
+  const a = 6378245.0;
+  const ee = 0.00669342162296594323;
+
+  function transformFromGCJToWGS(lng, lat) {
+    let dlat = transform(lng - 105.0, lat - 35.0).lat;
+    let dlng = transform(lng - 105.0, lat - 35.0).lng;
+    const radlat = lat / 180.0 * Math.PI;
+    let magic = Math.sin(radlat);
+    magic = 1 - ee * magic * magic;
+    const sqrtmagic = Math.sqrt(magic);
+    dlat = (dlat * 180.0) / ((a * (1 - ee)) / (magic * sqrtmagic) * Math.PI);
+    dlng = (dlng * 180.0) / (a / sqrtmagic * Math.cos(radlat) * Math.PI);
+    const mglat = lat + dlat;
+    const mglng = lng + dlng;
+    return {
+      lng: lng * 2 - mglng,
+      lat: lat * 2 - mglat
+    };
+  }
+
+  function transform(x, y) {
+    const ret = {};
+    let lat = x - 100.0;
+    let lng = y - 30.0;
+    ret.lat = lat + 2.0 * lng + 0.3 * lat * lng + 0.2 * Math.sqrt(Math.abs(lat)) +
+            (20.0 * Math.sin(6.0 * lat * Math.PI) + 20.0 * Math.sin(2.0 * lat * Math.PI)) * 2.0 / 3.0;
+    ret.lng = lng + 2.0 * lat + 0.3 * lat * lng + 0.2 * Math.sqrt(Math.abs(lng)) +
+            (20.0 * Math.sin(6.0 * lng * Math.PI) + 20.0 * Math.sin(2.0 * lng * Math.PI)) * 2.0 / 3.0;
+    ret.lat = ret.lat + (20.0 * Math.sin(lat * Math.PI) + 40.0 * Math.sin(lat / 3.0 * Math.PI)) * 2.0 / 3.0;
+    ret.lng = ret.lng + (20.0 * Math.sin(lng * Math.PI) + 40.0 * Math.sin(lng / 3.0 * Math.PI)) * 2.0 / 3.0;
+    ret.lat = ret.lat + (160.0 * Math.sin(lat / 12.0 * Math.PI) + 320 * Math.sin(lat * Math.PI / 30.0)) * 2.0 / 3.0;
+    ret.lng = ret.lng + (150.0 * Math.sin(lng / 12.0 * Math.PI) + 300 * Math.sin(lng * Math.PI / 30.0)) * 2.0 / 3.0;
+    return ret;
+  }
+
+  // ---------- 文件解析工具函数 ----------
+  function parseKML(xml) {
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    const coordsStr = doc.getElementsByTagName("coordinates")[0]?.textContent.trim();
+    if (!coordsStr) return [];
+
+    return coordsStr.split(/\s+/).map(c => {
+      const parts = c.split(',');
+      return {
+        lng: +parts[0],
+        lat: +parts[1]
+      };
+    });
+  }
+
+  function parseGPX(xml){
+    const doc=new DOMParser().parseFromString(xml,"application/xml");
+    return Array.from(doc.getElementsByTagName("trkpt"))
+            .map(pt=>({lat:+pt.getAttribute("lat"),lng:+pt.getAttribute("lon")}));
+  }
+
+  // ---------- 地理计算工具函数 ----------
+  function haversine(a,b){
+    const R=6371000,toRad=d=>d*Math.PI/180;
+    const dLat=toRad(b.lat-a.lat),dLng=toRad(b.lng-a.lng);
+    const lat1=toRad(a.lat),lat2=toRad(b.lat);
+    const h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
+    return 2*R*Math.asin(Math.sqrt(h));
+  }
+
+  function bearing(a,b){
+    const φ1=a.lat*Math.PI/180,φ2=b.lat*Math.PI/180,λ1=a.lng*Math.PI/180,λ2=b.lng*Math.PI/180;
+    const y=Math.sin(λ2-λ1)*Math.cos(φ2);
+    const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
+    return (Math.atan2(y,x)*180/Math.PI+360)%360;
+  }
+
+  function sliceLineByDistance(coords, dist) {
+    let acc = 0;
+    for (let i=1;i<coords.length;i++) {
+      const d = haversine(coords[i-1], coords[i]);
+      if (acc + d >= dist) {
+        const frac = (dist - acc) / d;
+        return {
+          lat: coords[i-1].lat + (coords[i].lat - coords[i-1].lat) * frac,
+          lng: coords[i-1].lng + (coords[i].lng - coords[i-1].lng) * frac
+        };
+      }
+      acc += d;
+    }
+    return coords[coords.length-1];
+  }
+
+  function updateRouteSegments(coords, dist, headLength=20) {
+    const total = coords.reduce((s,_,i)=> i? s+haversine(coords[i-1],coords[i]):0,0);
+    const headStartDist = Math.max(0, dist - headLength);
+
+    const pastEnd = sliceLineByDistance(coords, headStartDist);
+    const cur = sliceLineByDistance(coords, dist);
+
+    const pastLine = { type:"Feature", geometry:{ type:"LineString", coordinates: [] } };
+    pastLine.geometry.coordinates.push([coords[0].lng, coords[0].lat]);
+    let acc=0;
+    for (let i=1;i<coords.length;i++){
+      const d=haversine(coords[i-1],coords[i]);
+      if(acc+d < headStartDist){
+        pastLine.geometry.coordinates.push([coords[i].lng, coords[i].lat]);
+      } else {
+        pastLine.geometry.coordinates.push([pastEnd.lng,pastEnd.lat]);
+        break;
+      }
+      acc+=d;
+    }
+
+    const headLine = {
+      type:"Feature",
+      geometry:{ type:"LineString", coordinates:[[pastEnd.lng,pastEnd.lat],[cur.lng,cur.lat]] }
+    };
+
+    const futureLine = { type:"Feature", geometry:{ type:"LineString", coordinates:[[cur.lng,cur.lat]] } };
+    acc=0;
+    for (let i=1;i<coords.length;i++){
+      acc+=haversine(coords[i-1],coords[i]);
+      if(acc > dist){
+        futureLine.geometry.coordinates.push([coords[i].lng,coords[i].lat]);
+      }
+    }
+
+    map.getSource("route-past").setData(pastLine);
+    map.getSource("route-head").setData(headLine);
+    map.getSource("route-future").setData(futureLine);
+
+    return cur;
+  }
+
+  let route=[],anim,recorder,chunks=[];
+  let lastBearing=0,lastBearingUpdate=0,lastBearingPos=null;
+
+  function setResolution(aspectRatio) {
+    const mapContainer = document.getElementById('map');
+    const body = document.body;
+    mapContainer.style.width = '100%';
+    mapContainer.style.height = '100%';
+
+    if (aspectRatio === '16:9') {
+      const vw = window.innerWidth;
+      const vh = vw * 9 / 16;
+      mapContainer.style.height = `${vh}px`;
+      mapContainer.style.width = '100%';
+    } else if (aspectRatio === '9:16') {
+      const vh = window.innerHeight;
+      const vw = vh * 9 / 16;
+      mapContainer.style.width = `${vw}px`;
+      mapContainer.style.height = '100%';
+    }
+    map.resize();
+  }
+
+  function startFlyover(coords, resolution){
+    const speed=+el.speed.value,zoom=+el.zoom.value,pitch=+el.pitch.value;
+    const bearingInterval=+el.bearingInterval.value,bearingDist=+el.bearingDist.value;
+    const headLength=+el.headLength.value;
+
+    const segLen=[];let total=0;
+    for(let i=1;i<coords.length;i++){const d=haversine(coords[i-1],coords[i]);segLen.push(d);total+=d;}
+    const duration=(total/speed)*1000;
+    const start=performance.now();
+
+    startRecording(resolution);
+
+    function step(now){
+      const t=Math.min(1,(now-start)/duration),dist=t*total;
+      let acc=0,idx=0;
+      for(let i=0;i<segLen.length;i++){if(acc+segLen[i]>=dist){idx=i;break;}acc+=segLen[i];}
+      const frac=segLen[idx] ? (dist-acc)/segLen[idx] : 0;
+
+      const cur=updateRouteSegments(coords, dist, headLength);
+
+      const brg=bearing(coords[idx], coords[idx+1]||coords[idx]);
+      let useBearing=lastBearing;
+      if((now-lastBearingUpdate > bearingInterval) ||
+              (lastBearingPos && haversine(lastBearingPos,cur) > bearingDist)){
+        useBearing=brg;
+        lastBearing=brg;
+        lastBearingUpdate=now;
+        lastBearingPos=cur;
+      }
+
+      map.easeTo({
+        center:[cur.lng,cur.lat],
+        zoom,pitch,
+        bearing:useBearing,
+        duration:100,
+        easing:n=>n
+      });
+
+      if(t<1){
+        anim=requestAnimationFrame(step);
+      } else {
+        stopRecording(true);
+        el.status.textContent='完成飞越';
+        el.stop.disabled=false;
+      }
+    }
+    anim=requestAnimationFrame(step);
+  }
+
+  function startRecording(resolution){
+    setResolution(resolution);
+    const stream=map.getCanvas().captureStream(30);
+    recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9'});
+    chunks=[];
+    recorder.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
+    recorder.onstop=()=>{
+      setResolution('default');
+      const blob=new Blob(chunks,{type:'video/webm'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;
+      a.download='flyover.webm';
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(url),5000);
+    };
+    recorder.start(100);
+    el.status.textContent='录制中…';
+    el.stop.disabled=false;
+  }
+
+  function stopRecording(auto=false){
+    if(anim) cancelAnimationFrame(anim);
+    if(recorder && recorder.state!=='inactive') recorder.stop();
+    recorder=null;
+    setResolution('default');
+    if(!auto) el.status.textContent='已停止，文件已下载';
+    el.stop.disabled=true;
+    el.start.disabled=false;
+  }
+
+  // ---------- UI 绑定 ----------
+  const el={
+    file:document.getElementById('fileInput'),
+    format:document.getElementById('formatSelect'),
+    transform:document.getElementById('transformToWGS84'),
+    resolution:document.getElementById('resolutionSelect'),
+    terrainExaggeration:document.getElementById('terrainExaggeration'),
+    terrainExaggerationVal:document.getElementById('terrainExaggerationVal'),
+    speed:document.getElementById('speed'),
+    pitch:document.getElementById('pitch'),
+    zoom:document.getElementById('zoom'),
+    bearingInterval:document.getElementById('bearingInterval'),
+    bearingDist:document.getElementById('bearingDist'),
+    headLength:document.getElementById('headLength'),
+    speedVal:document.getElementById('speedVal'),
+    pitchVal:document.getElementById('pitchVal'),
+    zoomVal:document.getElementById('zoomVal'),
+    bearingIntervalVal:document.getElementById('bearingIntervalVal'),
+    bearingDistVal:document.getElementById('bearingDistVal'),
+    headLengthVal:document.getElementById('headLengthVal'),
+    start:document.getElementById('startBtn'),
+    stop:document.getElementById('stopBtn'),
+    status:document.getElementById('status'),
+    coordinatesInput: document.getElementById('coordinatesInput'),
+    drawMarkersBtn: document.getElementById('drawMarkersBtn')
+  };
+
+  // 保存所有已创建的标记，方便后续移除
+  let markers = [];
+
+  function drawMarkers() {
+    // 移除所有旧标记
+    markers.forEach(marker => marker.remove());
+    markers = [];
+
+    const jsonString = el.coordinatesInput.value.trim();
+    if (!jsonString) {
+      el.status.textContent = '坐标输入框为空。';
+      return;
+    }
+
+    try {
+      const coordsArray = JSON.parse(jsonString);
+      if (!Array.isArray(coordsArray)) {
+        throw new Error("JSON数据不是一个数组。");
+      }
+
+      coordsArray.forEach(place => {
+        const name = place.name;
+        const desc = place.desc || "";
+        const location = place.location;
+
+        if (name && location) {
+          const coords = location.split(',').map(c => parseFloat(c.trim()));
+          if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
+            const lng = coords[0];
+            const lat = coords[1];
+
+            // 创建一个包含点、地名和描述的自定义HTML元素
+            const markerElement = document.createElement('div');
+            markerElement.className = 'custom-marker';
+
+            const dot = document.createElement('div');
+            dot.className = 'marker-dot';
+
+            const content = document.createElement('div');
+            content.className = 'marker-content';
+            content.innerHTML = `<strong>${name}</strong><br>${desc}`;
+
+            markerElement.appendChild(dot);
+            markerElement.appendChild(content);
+
+            // 创建并添加标记到地图
+            const newMarker = new maplibregl.Marker({
+              element: markerElement,
+              anchor: 'bottom' // 调整锚点，让标记位于内容的底部中心
+            })
+                    .setLngLat([lng, lat])
+                    .addTo(map);
+
+            markers.push(newMarker);
+          }
+        }
+      });
+
+      el.status.textContent = `已添加 ${markers.length} 个地名标记。`;
+      if (markers.length > 0) {
+        map.flyTo({ center: markers[0].getLngLat(), zoom: 12 });
+      }
+    } catch (e) {
+      el.status.textContent = `坐标输入格式错误，请检查JSON格式。错误：${e.message}`;
+    }
+  }
+
+  ['speed','pitch','zoom','bearingInterval','bearingDist','headLength', 'terrainExaggeration'].forEach(id=>{
+    const input=el[id],label=el[id+'Val'];
+    input.addEventListener('input',()=>label.textContent=input.value);
+  });
+
+  el.terrainExaggeration.addEventListener('input', () => {
+    const exaggerationValue = parseFloat(el.terrainExaggeration.value);
+    map.setTerrain({ source: "terrain", exaggeration: exaggerationValue });
+  });
+
+  el.format.addEventListener('change', () => {
+    const isKML = el.format.value === 'kml';
+    document.getElementById('transformToWGS84').disabled = !isKML;
+    document.querySelector('label[for="transformToWGS84"]').style.opacity = isKML ? 1 : 0.5;
+  });
+
+  el.file.addEventListener('change',async e=>{
+    const file=e.target.files?.[0]; if(!file) return;
+    const text=await file.text();
+    const format = el.format.value;
+
+    if (format === 'kml') {
+      route = parseKML(text);
+      if (el.transform.checked) {
+        route = route.map(point => transformFromGCJToWGS(point.lng, point.lat));
+      }
+    } else {
+      route = parseGPX(text);
+    }
+
+    if(route.length<2){
+      el.status.textContent=`文件点太少，请检查文件格式是否正确`;
+      return;
+    }
+    el.status.textContent=`已加载 ${route.length} 个点`;
+    el.start.disabled=false;
+  });
+
+  el.start.addEventListener('click',()=>{
+    if(route.length<2){ el.status.textContent='请先上传文件'; return; }
+    el.start.disabled=true;
+    el.stop.disabled=false;
+    el.status.textContent='飞越进行中…';
+    const selectedResolution = el.resolution.value;
+    startFlyover(route, selectedResolution);
+  });
+
+  el.stop.addEventListener('click',()=>stopRecording(false));
+
+  el.drawMarkersBtn.addEventListener('click', drawMarkers);
+
+  document.getElementById('transformToWGS84').disabled = true;
+  document.querySelector('label[for="transformToWGS84"]').style.opacity = 0.5;
+</script>
+</body>
+</html>
