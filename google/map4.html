@@ -19,33 +19,6 @@
     #checkbox-container { display: flex; align-items: center; margin-top: 4px;}
     #checkbox-container input { width: auto; margin: 0 8px 0 0;}
     textarea { width: 100%; height: 100px; margin-top: 4px; padding: 6px; border-radius: 6px; border: none; font: 14px/1.4 system-ui; box-sizing: border-box; }
-
-    /* 更新标记点和标签的样式 */
-    .custom-marker {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      cursor: pointer;
-      min-width: 100px;
-    }
-    .marker-dot {
-      background-color: #4CAF50;
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      border: 2px solid white;
-    }
-    .marker-content {
-      background-color: rgba(0, 0, 0, 0.5);
-      color: #fff;
-      padding: 4px 8px;
-      border-radius: 4px;
-      margin-top: 4px;
-      white-space: nowrap;
-      font-size: 12px;
-      font-weight: 600;
-      text-align: center;
-    }
   </style>
 </head>
 <body>
@@ -71,7 +44,6 @@
 
   <label>输入坐标点 (JSON格式)</label>
   <textarea id="coordinatesInput" placeholder='例如：[{"name":"鹰潭市", "location":"117.062,28.243", "desc":"介绍鹰潭的风土人情"}]'></textarea>
-  <button id="drawMarkersBtn" class="primary">在地图上显示地名</button>
 
   <hr>
 
@@ -140,17 +112,17 @@
       },
       layers: [
         { id: "esri-imagery", type: "raster", source: "esri-imagery" }
-      ]
+      ],
+      // 重新指定包含中文字符的字体源
+      glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf"
     },
     center: [114.1695, 22.3193],
-    // 使用初始化值
     zoom: 15,
     pitch: 76,
     preserveDrawingBuffer: true
   });
 
   map.on('load', () => {
-    // 使用初始化值
     map.setTerrain({ source: "terrain", exaggeration: 36 });
     map.addLayer({
       id:"sky",
@@ -167,7 +139,6 @@
     map.addLayer({id:"route-head",type:"line",source:"route-head",paint:{"line-color":"#ffffff","line-width":6}});
   });
 
-  // ---------- 修复后的坐标转换函数 ----------
   const x_pi = 3.14159265358979324 * 3000.0 / 180.0;
   const a = 6378245.0;
   const ee = 0.00669342162296594323;
@@ -204,18 +175,13 @@
     return ret;
   }
 
-  // ---------- 文件解析工具函数 ----------
   function parseKML(xml) {
     const doc = new DOMParser().parseFromString(xml, "application/xml");
     const coordsStr = doc.getElementsByTagName("coordinates")[0]?.textContent.trim();
     if (!coordsStr) return [];
-
     return coordsStr.split(/\s+/).map(c => {
       const parts = c.split(',');
-      return {
-        lng: +parts[0],
-        lat: +parts[1]
-      };
+      return { lng: +parts[0], lat: +parts[1] };
     });
   }
 
@@ -225,7 +191,6 @@
             .map(pt=>({lat:+pt.getAttribute("lat"),lng:+pt.getAttribute("lon")}));
   }
 
-  // ---------- 地理计算工具函数 ----------
   function haversine(a,b){
     const R=6371000,toRad=d=>d*Math.PI/180;
     const dLat=toRad(b.lat-a.lat),dLng=toRad(b.lng-a.lng);
@@ -260,7 +225,6 @@
   function updateRouteSegments(coords, dist, headLength=20) {
     const total = coords.reduce((s,_,i)=> i? s+haversine(coords[i-1],coords[i]):0,0);
     const headStartDist = Math.max(0, dist - headLength);
-
     const pastEnd = sliceLineByDistance(coords, headStartDist);
     const cur = sliceLineByDistance(coords, dist);
 
@@ -295,7 +259,6 @@
     map.getSource("route-past").setData(pastLine);
     map.getSource("route-head").setData(headLine);
     map.getSource("route-future").setData(futureLine);
-
     return cur;
   }
 
@@ -307,7 +270,6 @@
     const body = document.body;
     mapContainer.style.width = '100%';
     mapContainer.style.height = '100%';
-
     if (aspectRatio === '16:9') {
       const vw = window.innerWidth;
       const vh = vw * 9 / 16;
@@ -326,22 +288,17 @@
     const speed=+el.speed.value,zoom=+el.zoom.value,pitch=+el.pitch.value;
     const bearingInterval=+el.bearingInterval.value,bearingDist=+el.bearingDist.value;
     const headLength=+el.headLength.value;
-
     const segLen=[];let total=0;
     for(let i=1;i<coords.length;i++){const d=haversine(coords[i-1],coords[i]);segLen.push(d);total+=d;}
     const duration=(total/speed)*1000;
     const start=performance.now();
-
     startRecording(resolution);
-
     function step(now){
       const t=Math.min(1,(now-start)/duration),dist=t*total;
       let acc=0,idx=0;
       for(let i=0;i<segLen.length;i++){if(acc+segLen[i]>=dist){idx=i;break;}acc+=segLen[i];}
       const frac=segLen[idx] ? (dist-acc)/segLen[idx] : 0;
-
       const cur=updateRouteSegments(coords, dist, headLength);
-
       const brg=bearing(coords[idx], coords[idx+1]||coords[idx]);
       let useBearing=lastBearing;
       if((now-lastBearingUpdate > bearingInterval) ||
@@ -351,7 +308,6 @@
         lastBearingUpdate=now;
         lastBearingPos=cur;
       }
-
       map.easeTo({
         center:[cur.lng,cur.lat],
         zoom,pitch,
@@ -359,7 +315,6 @@
         duration:100,
         easing:n=>n
       });
-
       if(t<1){
         anim=requestAnimationFrame(step);
       } else {
@@ -402,7 +357,6 @@
     el.start.disabled=false;
   }
 
-  // ---------- UI 绑定 ----------
   const el={
     file:document.getElementById('fileInput'),
     format:document.getElementById('formatSelect'),
@@ -425,72 +379,97 @@
     start:document.getElementById('startBtn'),
     stop:document.getElementById('stopBtn'),
     status:document.getElementById('status'),
-    coordinatesInput: document.getElementById('coordinatesInput'),
-    drawMarkersBtn: document.getElementById('drawMarkersBtn')
+    coordinatesInput: document.getElementById('coordinatesInput')
   };
 
-  // 保存所有已创建的标记，方便后续移除
-  let markers = [];
-
   function drawMarkers() {
-    // 移除所有旧标记
-    markers.forEach(marker => marker.remove());
-    markers = [];
-
+    if (map.getLayer('custom-markers-labels')) {
+      map.removeLayer('custom-markers-labels');
+      map.removeLayer('custom-markers-dots');
+      map.removeSource('custom-markers');
+    }
     const jsonString = el.coordinatesInput.value.trim();
     if (!jsonString) {
       el.status.textContent = '坐标输入框为空。';
       return;
     }
-
     try {
       const coordsArray = JSON.parse(jsonString);
       if (!Array.isArray(coordsArray)) {
         throw new Error("JSON数据不是一个数组。");
       }
-
-      coordsArray.forEach(place => {
+      const features = coordsArray.filter(place => {
         const name = place.name;
-        const desc = place.desc || "";
         const location = place.location;
-
         if (name && location) {
           const coords = location.split(',').map(c => parseFloat(c.trim()));
-          if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
-            const lng = coords[0];
-            const lat = coords[1];
+          return coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1]);
+        }
+        return false;
+      }).map(place => ({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: place.location.split(',').map(c => parseFloat(c.trim()))
+        },
+        properties: {
+          name: place.name,
+          desc: place.desc || ''
+        }
+      }));
 
-            // 创建一个包含点、地名和描述的自定义HTML元素
-            const markerElement = document.createElement('div');
-            markerElement.className = 'custom-marker';
-
-            const dot = document.createElement('div');
-            dot.className = 'marker-dot';
-
-            const content = document.createElement('div');
-            content.className = 'marker-content';
-            content.innerHTML = `<strong>${name}</strong><br>${desc}`;
-
-            markerElement.appendChild(dot);
-            markerElement.appendChild(content);
-
-            // 创建并添加标记到地图
-            const newMarker = new maplibregl.Marker({
-              element: markerElement,
-              anchor: 'bottom' // 调整锚点，让标记位于内容的底部中心
-            })
-                    .setLngLat([lng, lat])
-                    .addTo(map);
-
-            markers.push(newMarker);
-          }
+      if (features.length === 0) {
+        el.status.textContent = '未找到有效的地名坐标数据。';
+        return;
+      }
+      map.addSource('custom-markers', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: features
+        }
+      });
+      map.addLayer({
+        id: 'custom-markers-dots',
+        type: 'circle',
+        source: 'custom-markers',
+        paint: {
+          'circle-color': '#4CAF50',
+          'circle-radius': 5,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff'
+        }
+      });
+      map.addLayer({
+        id: 'custom-markers-labels',
+        type: 'symbol',
+        source: 'custom-markers',
+        layout: {
+          // 确保使用支持中文的字体
+          'text-font': ['Noto Sans Regular'],
+          'text-field': ['format',
+            ['get', 'name'], { 'font-scale': 1.2, 'font-weight': 'bold' },
+            '\n', {},
+            ['get', 'desc'], { 'font-scale': 0.8 }
+          ],
+          'text-size': 14,
+          'text-anchor': 'bottom',
+          'text-offset': [0, -1.5]
+        },
+        paint: {
+          'text-color': '#fff',
+          'text-halo-color': 'rgba(0,0,0,0.6)',
+          'text-halo-width': 2
         }
       });
 
-      el.status.textContent = `已添加 ${markers.length} 个地名标记。`;
-      if (markers.length > 0) {
-        map.flyTo({ center: markers[0].getLngLat(), zoom: 12 });
+      el.status.textContent = `已添加 ${features.length} 个地名标记。`;
+
+      const firstCoord = features[0]?.geometry.coordinates;
+      if (firstCoord) {
+        map.flyTo({ center: firstCoord, zoom: 12 });
       }
+
     } catch (e) {
       el.status.textContent = `坐标输入格式错误，请检查JSON格式。错误：${e.message}`;
     }
@@ -516,7 +495,6 @@
     const file=e.target.files?.[0]; if(!file) return;
     const text=await file.text();
     const format = el.format.value;
-
     if (format === 'kml') {
       route = parseKML(text);
       if (el.transform.checked) {
@@ -525,7 +503,6 @@
     } else {
       route = parseGPX(text);
     }
-
     if(route.length<2){
       el.status.textContent=`文件点太少，请检查文件格式是否正确`;
       return;
@@ -536,6 +513,7 @@
 
   el.start.addEventListener('click',()=>{
     if(route.length<2){ el.status.textContent='请先上传文件'; return; }
+    drawMarkers();
     el.start.disabled=true;
     el.stop.disabled=false;
     el.status.textContent='飞越进行中…';
@@ -544,8 +522,6 @@
   });
 
   el.stop.addEventListener('click',()=>stopRecording(false));
-
-  el.drawMarkersBtn.addEventListener('click', drawMarkers);
 
   document.getElementById('transformToWGS84').disabled = true;
   document.querySelector('label[for="transformToWGS84"]').style.opacity = 0.5;
