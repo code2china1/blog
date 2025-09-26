@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KML Style 替换工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            text-align: center;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            border: 1px solid #ccc;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        input[type="file"] {
+            display: block;
+            margin: 10px auto;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            color: white;
+        }
+        #generateBtn {
+            background-color: #007BFF;
+        }
+        #downloadBtn {
+            background-color: #28a745;
+            display: none; /* 默认隐藏 */
+        }
+        textarea {
+            width: 90%;
+            height: 200px;
+            margin-top: 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+        }
+        .status-message {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>KML Style 替换工具</h2>
+    <p>选择一个 KML 文件，生成新的文件，然后下载。</p>
+    <input type="file" id="fileInput" accept=".kml, .ovkml">
+    <button id="generateBtn">生成</button>
+    <button id="downloadBtn">导出新文件</button>
+    <p class="status-message" id="statusMessage"></p>
+    <textarea id="outputArea" placeholder="处理后的文件内容会显示在这里..." readonly></textarea>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const fileInput = document.getElementById('fileInput');
+        const generateBtn = document.getElementById('generateBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const statusMessage = document.getElementById('statusMessage');
+        const outputArea = document.getElementById('outputArea');
+        let processedContent = '';
+
+        const newStyleContent = `<Style>
+					<IconStyle>
+						<Icon>
+							<href>http://maps.google.com/mapfiles/kml/shapes/flag.png</href>
+						</Icon>
+						<hotSpot x="0.5" y="0.0" xunits="fraction" yunits="fraction" />
+					</IconStyle>
+					<LabelStyle>
+						<color>ff0000ff</color>
+						<scale>5.6</scale>
+					</LabelStyle>
+					<LineStyle>
+						<color>ff0000ff</color>
+						<width>2.0</width>
+					</LineStyle>
+				</Style>`.trim();
+
+        generateBtn.addEventListener('click', () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                statusMessage.textContent = '请先选择一个文件！';
+                return;
+            }
+
+            statusMessage.textContent = '正在处理...';
+            downloadBtn.style.display = 'none';
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                let content = e.target.result;
+
+                // 使用正则表达式匹配和替换 <Style>...</Style> 标签及其内容
+                const styleRegex = /<Placemark>([\s\S]*?)<Style>[\s\S]*?<\/Style>([\s\S]*?)<\/Placemark>/g;
+                let match;
+                let lastIndex = 0;
+                let newContent = '';
+
+                while ((match = styleRegex.exec(content)) !== null) {
+                    newContent += content.substring(lastIndex, match.index);
+                    const beforeStyle = match[1];
+                    const afterStyle = match[2];
+
+                    const placemarkContent = `<Placemark>${beforeStyle}${newStyleContent}${afterStyle}</Placemark>`;
+                    newContent += placemarkContent;
+                    lastIndex = styleRegex.lastIndex;
+                }
+                newContent += content.substring(lastIndex);
+
+                // 对于没有 Placemark 的情况，或者其他可能遗漏的 Style 标签
+                if (newContent.length === 0) {
+                     newContent = content.replace(/<Style>[\s\S]*?<\/Style>/g, newStyleContent);
+                }
+                
+                processedContent = newContent;
+                outputArea.value = processedContent;
+                statusMessage.textContent = '处理完成！';
+                downloadBtn.style.display = 'block';
+            };
+
+            reader.onerror = () => {
+                statusMessage.textContent = '文件读取失败！';
+            };
+
+            reader.readAsText(file);
+        });
+
+        downloadBtn.addEventListener('click', () => {
+            if (!processedContent) {
+                statusMessage.textContent = '没有可下载的内容。';
+                return;
+            }
+
+            const blob = new Blob([processedContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const originalFileName = fileInput.files[0].name;
+            const newFileName = originalFileName.replace(/(\.kml|\.ovkml)$/i, '_modified$1');
+            a.download = newFileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+    });
+</script>
+
+</body>
+</html>
