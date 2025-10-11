@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <title>Cesium 大圆航线动画（红已走 + 白未走 + 🚩终点）</title>
+    <script src="https://unpkg.com/cesium/Build/Cesium/Cesium.js"></script>
+    <link href="https://unpkg.com/cesium/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        html, body {
+            margin: 0; padding: 0; height: 100%; width: 100%;
+            display: flex; justify-content: center; align-items: center;
+            background: #000;
+        }
+        #cesiumContainer {
+            width: 100vh;
+            height: 100vh;
+            aspect-ratio: 9 / 16;
+        }
+        #controls {
+            position: absolute; top: 10px; left: 10px;
+            background: rgba(255,255,255,0.9); padding: 10px; border-radius: 6px;
+            font-family: "Microsoft YaHei", sans-serif; z-index: 999;
+        }
+        input { width: 90px; margin: 2px; }
+        button { margin: 2px; }
+        #progressBar {
+            position: absolute; bottom: 20px; left: 10px; right: 10px;
+            height: 8px; background: rgba(255,255,255,0.3);
+            border-radius: 4px; overflow: hidden;
+        }
+        #progress {
+            height: 100%; width: 0%; background: #0078ff; transition: width 0.05s linear;
+        }
+    </style>
+</head>
+<body>
+<div id="controls">
+    A点纬度: <input id="latA" value="25.516">
+    经度: <input id="lngA" value="119.778"><br>
+    B点纬度: <input id="latB" value="25.034">
+    经度: <input id="lngB" value="121.564"><br>
+    速度(秒): <input id="speed" type="number" value="5" min="1" max="60"> <br>
+    <button id="draw">绘制</button>
+    <button id="play">播放动画</button>
+    <button id="reset">重置</button><br>
+    <label><input type="checkbox" id="followCam" checked> 相机跟随</label><br>
+    <span id="distance"></span>
+</div>
+<div id="progressBar"><div id="progress"></div></div>
+<div id="cesiumContainer"></div>
+
+<script>
+    const viewer = new Cesium.Viewer("cesiumContainer", {
+        animation: false, timeline: false, geocoder: false, homeButton: false,
+        baseLayerPicker: true, sceneModePicker: true, navigationHelpButton: false, infoBox: false
+    });
+    viewer.scene.globe.depthTestAgainstTerrain = false;
+
+    let A, B;
+    let redLineEntity, whiteLineEntity, pointEntity, endFlagEntity;
+    let fullPositions = [];
+    let t = 0, playing = false, lastTime = null;
+    let duration = 5000; // 默认 5 秒
+    let totalDistanceKm = 0;
+    const numPoints = 512; // 点数保持高以平滑
+
+    function easeInOutQuad(x) {
+        return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+    }
+
+    function generateGeodesicPositions(lng1, lat1, lng2, lat2, numPoints = 64) {
+        const start = Cesium.Cartographic.fromDegrees(lng1, lat1);
+        const end = Cesium.Cartographic.fromDegrees(lng2, lat2);
+        const g = new Cesium.EllipsoidGeodesic(start, end);
+        const positions = [];
+        for (let i = 0; i <= numPoints; i++) {
+            const frac = i / numPoints;
+            const s = g.surfaceDistance * frac;
+            const carto = g.interpolateUsingSurfaceDistance(s);
+            positions.push(Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude));
+        }
+        return positions;
+    }
+
+    function addOffsetForSinglePoint(arc, isRed = true) {
+        if (arc.length < 2 && fullPositions.length > 1) {
+            const startIdx = isRed ? 0 : Math.max(0, fullPositions.length - 2);
+            const dir = Cesium.Cartesian3.subtract(fullPositions[startIdx + 1], fullPositions[startIdx], new Cesium.Cartesian3());
+            Cesium.Cartesian3.normalize(dir, dir);
+            const scalar = isRed ? 2000 : -2000; // 调整偏移至2km，确保起始可见但不夸张
+            Cesium.Cartesian3.multiplyByScalar(dir, scalar, dir);
+            const offsetPos = Cesium.Cartesian3.add(arc[0], dir, new Cesium.Cartesian3());
+            arc.push(offsetPos);
+        } else if (arc.length < 2) {
+            // 后备：简单偏移
+            const offsetPos = Cesium.Cartesian3.clone(arc[0]);
+            Cesium.Cartesian3.add(offsetPos, new Cesium.Cartesian3(2000, 0, 0), offsetPos);
+            arc.push(offsetPos);
+        }
+    }
+
+    function drawLine() {
+        const latA = parseFloat(document.getElementById('latA').value);
+        const lngA = parseFloat(document.getElementById('lngA').value);
+        const latB = parseFloat(document.getElementById('latB').value);
+        const lngB = parseFloat(document.getElementById('lngB').value);
+
+        if (isNaN(latA) || isNaN(lngA) || isNaN(latB) || isNaN(lngB)) {
+            alert("请输入有效的经纬度！");
+            return;
+        }
+
+        A = { lat: latA, lng: lngA };
+        B = { lat: latB, lng: lngB };
+
+        // 清理旧实体
+        viewer.entities.removeAll();
+
+        // 预计算完整路径位置
+        fullPositions = generateGeodesicPositions(A.lng, A.lat, B.lng, B.lat, numPoints);
+
+        // 先添加白色未走线（底层）
+        whiteLineEntity = viewer.entities.add({
+            polyline: {
+                positions: fullPositions,
+                width: 3,
+                material: Cesium.Color.WHITE,
+                clampToGround: false
+            }
+        });
+
+        // 然后添加红色已走部分（上层，确保覆盖白线）
+        const initialRed = [fullPositions[0]];
+        addOffsetForSinglePoint(initialRed, true);
+        redLineEntity = viewer.entities.add({
+            polyline: {
+                positions: initialRed,
+                width: 4,  // 略粗于白线，确保突出
+                material: Cesium.Color.RED,
+                clampToGround: false
+            }
+        });
+
+        // 小球
+        pointEntity = viewer.entities.add({
+            position: fullPositions[0],
+            point: { pixelSize: 10, color: Cesium.Color.BLUE },
+            label: {
+                text: "已走: 0.00 km",
+                font: "14px sans-serif",
+                pixelOffset: new Cesium.Cartesian2(0, -20),
+                fillColor: Cesium.Color.BLACK,
+                showBackground: true,
+                backgroundColor: Cesium.Color.WHITE
+            }
+        });
+
+        // 🚩 终点红旗
+        endFlagEntity = viewer.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(B.lng, B.lat),
+            label: {
+                text: "🚩",
+                font: "28px sans-serif",
+                pixelOffset: new Cesium.Cartesian2(0, -30),
+                fillColor: Cesium.Color.RED,
+                showBackground: false
+            }
+        });
+
+        // 计算总距离
+        const geodesic = new Cesium.EllipsoidGeodesic(
+            Cesium.Cartographic.fromDegrees(A.lng, A.lat),
+            Cesium.Cartographic.fromDegrees(B.lng, B.lat)
+        );
+        totalDistanceKm = geodesic.surfaceDistance / 1000;
+
+        resetAnim();
+        viewer.flyTo(pointEntity);
+    }
+
+    function animate(ts) {
+        if (!playing) return;
+        if (!lastTime) lastTime = ts;
+        const dt = ts - lastTime;
+        lastTime = ts;
+
+        t = Math.min(1, t + dt / duration);
+        const easedT = easeInOutQuad(t);
+
+        // 计算索引
+        const totalSegments = fullPositions.length - 1;
+        const progress = easedT * totalSegments;
+        const index = Math.floor(progress);
+        const frac = progress - index;
+        const nextIndex = Math.min(index + 1, totalSegments);
+        // 线性插值当前点位置
+        const currentPos = Cesium.Cartesian3.lerp(
+            fullPositions[index],
+            fullPositions[nextIndex],
+            frac,
+            new Cesium.Cartesian3()
+        );
+        pointEntity.position = currentPos;
+
+        // 更新里程和进度条
+        const traveledKm = totalDistanceKm * easedT;
+        document.getElementById('distance').textContent = `已走: ${traveledKm.toFixed(2)} km`;
+        pointEntity.label.text = `已走: ${traveledKm.toFixed(2)} km`;
+        document.getElementById('progress').style.width = (t * 100).toFixed(1) + "%";
+
+        // 先更新白色线（未走部分）
+        let whiteArc;
+        if (frac > 0 && index < totalSegments) {
+            whiteArc = [currentPos];
+            whiteArc = whiteArc.concat(fullPositions.slice(index + 1));
+        } else {
+            whiteArc = fullPositions.slice(index);
+        }
+        if (t < 1) {  // 动画结束时隐藏白线
+            addOffsetForSinglePoint(whiteArc, false);
+            whiteLineEntity.polyline.positions = whiteArc;
+        } else {
+            whiteLineEntity.polyline.show = false;  // 取巧：结束时隐藏白线
+        }
+
+        // 后更新红色线（已走部分，确保上层渲染）
+        let redArc = fullPositions.slice(0, index + 1);
+        if (frac > 0) {
+            redArc.push(currentPos);
+        }
+        addOffsetForSinglePoint(redArc, true);
+        redLineEntity.polyline.positions = redArc;
+
+        // 相机跟随
+        if (document.getElementById('followCam').checked) {
+            viewer.camera.lookAt(
+                currentPos,
+                new Cesium.Cartesian3(0, -200000, 100000)
+            );
+        } else {
+            viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+        }
+
+        if (t < 1) {
+            requestAnimationFrame(animate);
+        } else {
+            playing = false;
+            lastTime = null;
+            viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+        }
+    }
+
+    function playAnim() {
+        if (!pointEntity || fullPositions.length === 0) return;
+        const speedSec = parseFloat(document.getElementById('speed').value);
+        duration = isNaN(speedSec) ? 5000 : speedSec * 1000;
+        if (!playing) {
+            // 动画开始前确保白线显示
+            if (whiteLineEntity) whiteLineEntity.polyline.show = true;
+            playing = true;
+            requestAnimationFrame(animate);
+        }
+    }
+
+    function resetAnim() {
+        playing = false;
+        t = 0;
+        lastTime = null;
+
+        if (pointEntity && fullPositions.length > 0) {
+            pointEntity.position = fullPositions[0];
+            pointEntity.label.text = "已走: 0.00 km";
+        }
+        document.getElementById('distance').textContent = "已走: 0.00 km";
+        document.getElementById('progress').style.width = "0%";
+
+        // 红线回到起点；白线恢复整条，并显示
+        if (redLineEntity && fullPositions.length > 0) {
+            const initialRed = [fullPositions[0]];
+            addOffsetForSinglePoint(initialRed, true);
+            redLineEntity.polyline.positions = initialRed;
+        }
+        if (whiteLineEntity && fullPositions.length > 0) {
+            whiteLineEntity.polyline.positions = fullPositions;
+            whiteLineEntity.polyline.show = true;
+        }
+
+        viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    }
+
+    // 事件绑定
+    document.getElementById('draw').addEventListener('click', drawLine);
+    document.getElementById('play').addEventListener('click', playAnim);
+    document.getElementById('reset').addEventListener('click', resetAnim);
+
+    // 默认绘制一次
+    drawLine();
+</script>
+</body>
+</html>
