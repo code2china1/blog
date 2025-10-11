@@ -39,6 +39,10 @@
         #progress {
             height: 100%; width: 0%; background: #0078ff; transition: width 0.05s linear;
         }
+        #distance {
+            font-size: 18px;  /* 控制面板距离文本加大 */
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -65,7 +69,7 @@
     viewer.scene.globe.depthTestAgainstTerrain = false;
 
     let A, B;
-    let redLineEntity, whiteLineEntity, pointEntity, endFlagEntity;
+    let redLineEntity, whiteLineEntity, pointEntity, endFlagEntity, endTextEntity;
     let fullPositions = [];
     let t = 0, playing = false, lastTime = null;
     let duration = 5000; // 默认 5 秒
@@ -171,23 +175,46 @@
             point: { pixelSize: 10, color: Cesium.Color.BLUE },
             label: {
                 text: "已走: 0.00 km",
-                font: "14px sans-serif",
+                font: "bold 32px 'Microsoft YaHei', sans-serif",  /* 加大2倍 */
                 pixelOffset: new Cesium.Cartesian2(0, -20),
                 fillColor: Cesium.Color.BLACK,
+                outlineColor: Cesium.Color.WHITE,
+                outlineWidth: 2,
                 showBackground: true,
-                backgroundColor: Cesium.Color.WHITE
+                backgroundColor: Cesium.Color.WHITE.withAlpha(0.9),
+                backgroundPadding: new Cesium.Cartesian2(8, 4),
+                scaleByDistance: undefined,
+                translucencyByDistance: undefined
             }
         });
 
-        // 🚩 终点红旗
+        // 🚩 终点红旗（先添加，确保渲染在文字下方），调整偏移向上
         endFlagEntity = viewer.entities.add({
             position: Cesium.Cartesian3.fromDegrees(B.lng, B.lat),
             label: {
                 text: "🚩",
-                font: "28px sans-serif",
-                pixelOffset: new Cesium.Cartesian2(0, -30),
+                font: "bold 56px 'Microsoft YaHei', sans-serif",  /* 加大2倍 */
+                pixelOffset: new Cesium.Cartesian2(0, 20),
                 fillColor: Cesium.Color.RED,
+                outlineColor: Cesium.Color.WHITE,
+                outlineWidth: 2,
                 showBackground: false
+            }
+        });
+
+        // 终点文字标签（后添加，确保渲染在红旗上方），调整偏移向下更多
+        endTextEntity = viewer.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(B.lng, B.lat),
+            label: {
+                text: "终点",
+                font: "bold 32px 'Microsoft YaHei', sans-serif",
+                pixelOffset: new Cesium.Cartesian2(0, -80),
+                fillColor: Cesium.Color.BLACK,
+                outlineColor: Cesium.Color.WHITE,
+                outlineWidth: 2,
+                showBackground: true,
+                backgroundColor: Cesium.Color.WHITE.withAlpha(0.9),
+                backgroundPadding: new Cesium.Cartesian2(8, 4)
             }
         });
 
@@ -198,7 +225,7 @@
         );
         totalDistanceKm = geodesic.surfaceDistance / 1000;
 
-        resetAnim();
+        resetAnim(true);
         viewer.flyTo(pointEntity);
     }
 
@@ -268,11 +295,13 @@
         if (t < 1) {
             requestAnimationFrame(animate);
         } else {
-            // 循环播放：重置后立即重新播放
+            // 循环播放：重置后暂停10秒再重新播放
             playing = false;
             lastTime = null;
-            resetAnim();
-            playAnim();
+            setTimeout(() => {
+                resetAnim(false);
+                playAnim();
+            }, 10000);
         }
     }
 
@@ -289,7 +318,7 @@
         }
     }
 
-    function resetAnim() {
+    function resetAnim(manual = true) {
         playing = false;
         t = 0;
         lastTime = null;
@@ -313,13 +342,15 @@
         }
 
         viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
-        showToolbar();  // 重置时显示工具栏
+        if (manual) {
+            showToolbar();  // 仅手动重置时显示工具栏
+        }
     }
 
     // 事件绑定
     document.getElementById('draw').addEventListener('click', drawLine);
     document.getElementById('play').addEventListener('click', playAnim);
-    document.getElementById('reset').addEventListener('click', resetAnim);
+    document.getElementById('reset').addEventListener('click', () => resetAnim(true));
 
     // 默认绘制一次
     drawLine();
