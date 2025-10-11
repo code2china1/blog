@@ -20,6 +20,10 @@
             position: absolute; top: 10px; left: 10px;
             background: rgba(255,255,255,0.9); padding: 10px; border-radius: 6px;
             font-family: "Microsoft YaHei", sans-serif; z-index: 999;
+            transition: opacity 0.3s ease;
+        }
+        #controls.hidden {
+            opacity: 0; pointer-events: none;
         }
         input { width: 90px; margin: 2px; }
         button { margin: 2px; }
@@ -27,6 +31,10 @@
             position: absolute; bottom: 20px; left: 10px; right: 10px;
             height: 8px; background: rgba(255,255,255,0.3);
             border-radius: 4px; overflow: hidden;
+            transition: opacity 0.3s ease;
+        }
+        #progressBar.hidden {
+            opacity: 0;
         }
         #progress {
             height: 100%; width: 0%; background: #0078ff; transition: width 0.05s linear;
@@ -97,6 +105,22 @@
             Cesium.Cartesian3.add(offsetPos, new Cesium.Cartesian3(2000, 0, 0), offsetPos);
             arc.push(offsetPos);
         }
+    }
+
+    function hideToolbar() {
+        document.getElementById('controls').classList.add('hidden');
+        document.getElementById('progressBar').classList.add('hidden');
+        // 隐藏Cesium默认工具栏
+        if (viewer._baseLayerPickerContainer) viewer._baseLayerPickerContainer.style.visibility = 'hidden';
+        if (viewer._sceneModePickerContainer) viewer._sceneModePickerContainer.style.visibility = 'hidden';
+    }
+
+    function showToolbar() {
+        document.getElementById('controls').classList.remove('hidden');
+        document.getElementById('progressBar').classList.remove('hidden');
+        // 显示Cesium默认工具栏
+        if (viewer._baseLayerPickerContainer) viewer._baseLayerPickerContainer.style.visibility = 'visible';
+        if (viewer._sceneModePickerContainer) viewer._sceneModePickerContainer.style.visibility = 'visible';
     }
 
     function drawLine() {
@@ -244,9 +268,11 @@
         if (t < 1) {
             requestAnimationFrame(animate);
         } else {
+            // 循环播放：重置后立即重新播放
             playing = false;
             lastTime = null;
-            viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+            resetAnim();
+            playAnim();
         }
     }
 
@@ -255,8 +281,9 @@
         const speedSec = parseFloat(document.getElementById('speed').value);
         duration = isNaN(speedSec) ? 5000 : speedSec * 1000;
         if (!playing) {
-            // 动画开始前确保白线显示
+            // 动画开始前确保白线显示，并隐藏工具栏
             if (whiteLineEntity) whiteLineEntity.polyline.show = true;
+            hideToolbar();
             playing = true;
             requestAnimationFrame(animate);
         }
@@ -286,6 +313,7 @@
         }
 
         viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+        showToolbar();  // 重置时显示工具栏
     }
 
     // 事件绑定
