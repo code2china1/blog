@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Data Visualization - Editor Mode</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Microsoft YaHei', sans-serif; display: flex; }
+        
+        /* 左侧编辑面板 */
+        #editor-panel {
+            width: 340px;
+            height: 100vh;
+            background: rgba(30, 30, 30, 0.95);
+            color: white;
+            overflow-y: auto;
+            padding: 20px;
+            box-sizing: border-box;
+            border-right: 1px solid #444;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        #editor-panel h2 { margin-top: 0; font-size: 18px; color: #00f3ff; }
+        
+        .input-group {
+            background: rgba(255,255,255,0.05);
+            padding: 10px;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .input-group label { font-size: 12px; color: #aaa; }
+        .input-row { display: flex; gap: 5px; }
+        
+        input {
+            background: #333; border: 1px solid #555; color: white;
+            padding: 5px; border-radius: 3px; width: 100%;
+        }
+        input:focus { outline: 1px solid #00f3ff; }
+
+        .btn-area {
+            position: sticky; bottom: 0; background: #1e1e1e; padding: 10px 0;
+            display: flex; flex-direction: column; gap: 10px;
+            border-top: 1px solid #444; margin-top: auto;
+        }
+
+        button {
+            padding: 12px; border: none; border-radius: 4px;
+            cursor: pointer; font-weight: bold; font-size: 14px;
+            transition: 0.2s;
+        }
+        .btn-refresh { background: #00f3ff; color: #000; }
+        .btn-refresh:hover { background: #00d2dd; }
+        
+        .btn-record { background: #ff4444; color: white; }
+        .btn-record.recording { background: #aa0000; animation: pulse 1s infinite; }
+        .btn-stop { background: #44ff44; color: #000; display: none; }
+
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+
+        /* 画布容器 */
+        #canvas-wrapper {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #000;
+            position: relative;
+        }
+
+        #canvas-container { 
+            /* 9:16 比例 */
+            height: 95vh; 
+            aspect-ratio: 9 / 16;
+            background-color: #000; 
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="editor-panel">
+        <h2>数据编辑器</h2>
+        <div id="inputs-container">
+            </div>
+        <div class="btn-area">
+            <button class="btn-refresh" id="btn-refresh">🔄 重置并应用数据</button>
+            <button class="btn-record" id="btn-record">🔴 开始录制 (WebM)</button>
+            <button class="btn-stop" id="btn-stop">⏹ 停止并下载</button>
+        </div>
+    </div>
+
+    <div id="canvas-wrapper">
+        <div id="canvas-container"></div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import gsap from 'https://unpkg.com/gsap@3.12.5/index.js';
+
+        // --- 默认数据 (10组) ---
+        // 颜色池
+        const COLORS = [0xffff00, 0x55ff55, 0xaa00ff, 0xff5555, 0x00ffff, 0xff00ff, 0xffaa00, 0x00ffaa, 0x2277ff, 0xff2255];
+        
+        // 初始数据状态
+        let appData = [
+            { title: "南京", content: "Top 10", height: 60, color: COLORS[0] },
+            { title: "武汉", content: "Top 9", height: 65, color: COLORS[1] },
+            { title: "杭州", content: "Top 8", height: 68, color: COLORS[2] },
+            { title: "成都", content: "Top 7", height: 70, color: COLORS[3] },
+            { title: "苏州", content: "Top 6", height: 75, color: COLORS[4] },
+            { title: "重庆", content: "Top 5", height: 80, color: COLORS[5] },
+            { title: "广州", content: "Top 4", height: 85, color: COLORS[6] },
+            { title: "深圳", content: "Top 3", height: 90, color: COLORS[7] },
+            { title: "北京", content: "Top 2", height: 95, color: COLORS[8] },
+            { title: "上海", content: "Top 1", height: 100, color: COLORS[9] }
+        ];
+
+        const COLUMN_APPEAR_INTERVAL = 5; // 5秒间隔
+
+        // --- UI 初始化逻辑 ---
+        const inputsContainer = document.getElementById('inputs-container');
+
+        function initUI() {
+            inputsContainer.innerHTML = '';
+            appData.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = 'input-group';
+                div.innerHTML = `
+                    <label>第 ${index + 1} 个出现的柱体:</label>
+                    <div class="input-row">
+                        <input type="text" id="title-${index}" value="${item.title}" placeholder="标题(城市)">
+                        <input type="number" id="height-${index}" value="${item.height}" placeholder="高度">
+                    </div>
+                    <input type="text" id="content-${index}" value="${item.content}" placeholder="内容(排名/描述)">
+                `;
+                inputsContainer.appendChild(div);
+            });
+        }
+
+        function updateDataFromUI() {
+            appData.forEach((item, index) => {
+                item.title = document.getElementById(`title-${index}`).value;
+                item.content = document.getElementById(`content-${index}`).value;
+                item.height = parseFloat(document.getElementById(`height-${index}`).value);
+            });
+        }
+
+        initUI();
+
+        // --- Three.js 场景变量 ---
+        let scene, camera, renderer, composer;
+        let particlesMesh;
+        let pillars = []; // 存储当前的柱子对象
+        let animationTimeline = null; // GSAP 时间轴
+        let animationFrameId;
+        let clock = new THREE.Clock();
+
+        // --- 录制相关变量 ---
+        let mediaRecorder;
+        let recordedChunks = [];
+
+        // --- 初始化与渲染逻辑 ---
+        function initScene() {
+            // 清理旧场景
+            const container = document.getElementById('canvas-container');
+            container.innerHTML = ''; // 清空Canvas
+
+            if (animationTimeline) animationTimeline.kill();
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            pillars = [];
+
+            // 创建新场景
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111); 
+            scene.fog = new THREE.Fog(0x111111, 40, 120);
+
+            const ASPECT_RATIO = 9 / 16; 
+            // 获取容器的实际像素大小，用于高清渲染
+            const containerRect = container.getBoundingClientRect();
+            const renderWidth = containerRect.height * ASPECT_RATIO;
+            const renderHeight = containerRect.height;
+
+            camera = new THREE.PerspectiveCamera(45, ASPECT_RATIO, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); // preserveDrawingBuffer 用于录制
+            
+            renderer.setSize(renderWidth, renderHeight);
+            renderer.setPixelRatio(window.devicePixelRatio); // 依然使用高清
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
+            container.appendChild(renderer.domElement);
+
+            // --- 灯光 ---
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dirLight.position.set(20, 50, 30);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048; 
+            dirLight.shadow.mapSize.height = 2048;
+            scene.add(dirLight);
+
+            const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            fillLight.position.set(-20, 20, 20);
+            scene.add(fillLight);
+
+            // --- 地面 ---
+            const gridHelper = new THREE.GridHelper(200, 100, 0x444444, 0x222222);
+            scene.add(gridHelper);
+            
+            const planeGeometry = new THREE.PlaneGeometry(500, 500);
+            const planeMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x111111, roughness: 0.5, metalness: 0.2
+            });
+            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            plane.rotation.x = -Math.PI / 2;
+            plane.position.y = -0.1;
+            plane.receiveShadow = true;
+            scene.add(plane);
+
+            // --- 粒子 ---
+            const particlesGeometry = new THREE.BufferGeometry();
+            const particlesCount = 1000;
+            const posArray = new Float32Array(particlesCount * 3);
+            for(let i = 0; i < particlesCount * 3; i++) posArray[i] = (Math.random() - 0.5) * 250;
+            particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            const particlesMaterial = new THREE.PointsMaterial({ size: 0.4, color: 0xffffff, transparent: true, opacity: 0.4 });
+            particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
+            scene.add(particlesMesh);
+
+            // --- 生成柱体 ---
+            createPillars();
+
+            // --- 开始动画序列 ---
+            startAnimation();
+
+            // --- 启动渲染循环 ---
+            clock = new THREE.Clock();
+            animate();
+        }
+
+        function createTextSprite(text, colorHex, fontSize = 80, isContent = false) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024; 
+            canvas.height = isContent ? 256 : 512; 
+
+            const ctx = canvas.getContext('2d');
+            ctx.shadowBlur = 0; // 确保清晰，无光晕
+            
+            ctx.font = `Bold ${fontSize}px 'Microsoft YaHei', sans-serif`;
+            ctx.fillStyle = '#ffffff'; 
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.minFilter = THREE.LinearFilter; 
+            texture.magFilter = THREE.LinearFilter;
+            texture.needsUpdate = true;
+
+            const material = new THREE.SpriteMaterial({ 
+                map: texture, 
+                transparent: true, 
+                opacity: 0,
+                color: isContent ? colorHex : 0xffffff 
+            });
+            
+            const sprite = new THREE.Sprite(material);
+            sprite.scale.set(isContent ? 12 : 18, isContent ? 3 : 9, 1); 
+            return sprite;
+        }
+
+        function createPillars() {
+            const geometry = new THREE.BoxGeometry(3, 1, 3); 
+            geometry.translate(0, 0.5, 0); 
+
+            const spacing = 10; 
+            const startX = -((appData.length - 1) * spacing) / 2;
+
+            appData.forEach((data, index) => {
+                const group = new THREE.Group();
+                
+                // 1. 柱子
+                const material = new THREE.MeshStandardMaterial({
+                    color: data.color, 
+                    roughness: 0.3,    
+                    metalness: 0.1,    
+                    emissive: 0x000000
+                });
+                const pillar = new THREE.Mesh(geometry, material);
+                pillar.castShadow = true;
+                pillar.receiveShadow = true;
+                
+                // 2. 线框
+                const edges = new THREE.EdgesGeometry(geometry);
+                const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
+                const wireframe = new THREE.LineSegments(edges, lineMaterial);
+
+                const targetHeight = data.height / 4; // 高度比例系数
+                pillar.scale.y = 0.01;
+                wireframe.scale.y = 0.01;
+
+                group.add(pillar);
+                group.add(wireframe);
+
+                // 3. 标题 (城市名) - 显示在顶部
+                const titleSprite = createTextSprite(data.title, data.color);
+                titleSprite.position.set(0, targetHeight + 3.5, 0); 
+                group.add(titleSprite);
+
+                // 4. 内容 (Top X) - 显示在柱子中间或下方
+                const contentSprite = createTextSprite(data.content, data.color, 70, true);
+                contentSprite.position.set(0, targetHeight + 1.5, 0);
+                group.add(contentSprite);
+
+                group.position.set(startX + index * spacing, 0, 0);
+                scene.add(group);
+
+                pillars.push({
+                    pillar: pillar,
+                    wireframe: wireframe,
+                    text: titleSprite,
+                    content: contentSprite,
+                    targetHeight: targetHeight,
+                    color: data.color
+                });
+            });
+        }
+
+        function startAnimation() {
+            const startX = -((appData.length - 1) * 10) / 2;
+            const TOTAL_DURATION = appData.length * COLUMN_APPEAR_INTERVAL + 3;
+
+            camera.position.set(startX - 25, 20, 60); 
+            camera.lookAt(startX - 10, 10, 0); 
+
+            animationTimeline = gsap.timeline();
+
+            // 匀速摄像机运动
+            animationTimeline.to(camera.position, {
+                x: -startX + 25, 
+                duration: TOTAL_DURATION,
+                ease: "none" 
+            }, "start");
+
+            const lookAtTarget = { x: startX - 10, y: 10, z: 0 };
+            animationTimeline.to(lookAtTarget, {
+                x: -startX + 10,
+                duration: TOTAL_DURATION,
+                ease: "none", 
+                onUpdate: function() {
+                    camera.lookAt(lookAtTarget.x, lookAtTarget.y, lookAtTarget.z);
+                }
+            }, "start");
+
+            // 柱子生长逻辑
+            pillars.forEach((item, index) => {
+                const delay = 1 + index * COLUMN_APPEAR_INTERVAL;
+
+                // 生长
+                animationTimeline.to([item.pillar.scale, item.wireframe.scale], {
+                    y: item.targetHeight,
+                    duration: 1.5,
+                    ease: "back.out(1.2)" 
+                }, `start+=${delay}`);
+
+                // 白光闪烁
+                animationTimeline.fromTo(item.pillar.material.color, 
+                    { r: 1, g: 1, b: 1 }, 
+                    { r: new THREE.Color(item.color).r, g: new THREE.Color(item.color).g, b: new THREE.Color(item.color).b, duration: 0.5 },
+                    `start+=${delay}`
+                );
+
+                // 文字显示
+                animationTimeline.to([item.text.material, item.content.material], {
+                    opacity: 1,
+                    duration: 0.8
+                }, `start+=${delay + 0.5}`);
+
+                // 文字上浮
+                animationTimeline.from([item.text.position, item.content.position], {
+                    y: "-=3",
+                    duration: 0.8,
+                    ease: "power2.out"
+                }, `start+=${delay + 0.5}`);
+            });
+        }
+
+        function animate() {
+            animationFrameId = requestAnimationFrame(animate);
+            const t = clock.getElapsedTime();
+
+            if(particlesMesh) particlesMesh.rotation.y = t * 0.02;
+            
+            pillars.forEach((p, i) => {
+                if(p.text.material.opacity > 0.5) {
+                    p.text.position.y += Math.sin(t * 2 + i) * 0.003;
+                }
+            });
+
+            renderer.render(scene, camera); 
+        }
+
+        // --- 按钮事件 ---
+        document.getElementById('btn-refresh').addEventListener('click', () => {
+            updateDataFromUI(); // 读取输入框的值
+            initScene(); // 重置场景
+        });
+
+        // --- 录制功能 ---
+        const btnRecord = document.getElementById('btn-record');
+        const btnStop = document.getElementById('btn-stop');
+
+        btnRecord.addEventListener('click', () => {
+            const canvas = document.querySelector('canvas');
+            if (!canvas) return;
+
+            // 捕获Canvas流 (60FPS)
+            const stream = canvas.captureStream(60);
+            // 尝试使用更好的MimeType，如果不兼容则使用默认
+            let options = { mimeType: 'video/webm;codecs=vp9' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = { mimeType: 'video/webm' };
+            }
+
+            mediaRecorder = new MediaRecorder(stream, options);
+            recordedChunks = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = '3d_chart_animation.webm'; // 默认下载格式为webm
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                btnRecord.style.display = 'block';
+                btnStop.style.display = 'none';
+                btnRecord.classList.remove('recording');
+                btnRecord.textContent = "🔴 开始录制 (WebM)";
+            };
+
+            mediaRecorder.start();
+            
+            btnRecord.textContent = "正在录制... (点击可重新开始)";
+            btnRecord.style.display = 'none';
+            btnStop.style.display = 'block';
+        });
+
+        btnStop.addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+        });
+
+        // 初始化
+        initScene();
+
+        // 窗口调整
+        window.addEventListener('resize', () => {
+            const container = document.getElementById('canvas-container');
+            if(!container || !camera || !renderer) return;
+            
+            const containerRect = container.getBoundingClientRect();
+            const renderWidth = containerRect.height * (9/16);
+            const renderHeight = containerRect.height;
+            
+            // 这里我们不改变相机比例，只改变渲染大小以保持清晰度
+            // camera.aspect = 9 / 16; 
+            // camera.updateProjectionMatrix();
+            renderer.setSize(renderWidth, renderHeight);
+        });
+
+    </script>
+</body>
+</html>
