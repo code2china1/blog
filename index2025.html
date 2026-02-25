@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <title>高德地图 GPX 轨迹回放（红-白-黄分段 + 参数调节 + 自动回起点 + 动态方向锁定 + 帧间隔）</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; }
+        #container { width: 100%; height: calc(100% - 64px); }
+        #controls {
+            height: 64px; display: flex; align-items: center; gap: 10px;
+            padding: 0 12px; background: #f7f7f7; border-top: 1px solid #eee;
+            box-sizing: border-box;
+        }
+        #playBtn { padding: 6px 14px; cursor: pointer; }
+        #progress { flex: 1; }
+        .label { color:#333; font: 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial; }
+    </style>
+    <!-- 高德地图 JS API -->
+    <script src="https://webapi.amap.com/maps?v=2.0&key=a8f969d32367869fb23e558d5600a54a"></script>
+    <!-- GPX 解析库 -->
+    <script src="https://unpkg.com/gpxparser/dist/gpxparser.min.js"></script>
+</head>
+<body>
+
+<div id="container"></div>
+
+<div id="controls">
+    <input type="file" id="fileInput" accept=".gpx" />
+    <button id="playBtn" disabled>▶ 播放</button>
+    <input type="range" id="progress" min="0" max="1000" value="0" disabled />
+    <label class="label">倍速：
+        <select id="speedSelect" disabled>
+            <option value="0.5">0.5x</option>
+            <option value="1">1x</option>
+            <option value="2">2x</option>
+            <option value="5">5x</option>
+            <option value="10">10x</option>
+            <option value="40">40x</option>
+            <option value="50" selected>50x</option>
+        </select>
+    </label>
+    <label class="label">红色长度(m)：
+        <input type="number" id="redLengthInput" value="2000" min="100" step="100" style="width:70px;">
+    </label>
+    <label class="label">速度(m/s)：
+        <input type="number" id="speedInput" value="10" min="1" step="1" style="width:50px;">
+    </label>
+    <label class="label">仰角(°)：
+        <input type="number" id="pitchInput" value="60" min="0" max="80" step="1" style="width:50px;">
+    </label>
+    <label class="label">
+        <input type="checkbox" id="followCheck" checked> 镜头跟随
+    </label>
+    <label class="label">
+        <input type="checkbox" id="loopCheck"> 播放完成回到起点
+    </label>
+    <label class="label">方向锁定：
+        <select id="headingSelect" disabled>
+            <option value="north" selected>朝北</option>
+            <option value="south">朝南</option>
+        </select>
+    </label>
+    <label class="label">方向更新帧数：
+        <input type="number" id="headingIntervalInput" value="10" min="1" step="1" style="width:50px;">
+    </label>
+    <span class="label" id="readout">0m / 0m</span>
+</div>
+
+<script>
+    /* ===== 坐标转换 WGS84 → GCJ02 ===== */
+    const PI = Math.PI, a = 6378245.0, ee = 0.00669342162296594323;
+    function out_of_china(lng, lat){ return (lng<72.004||lng>137.8347)||(lat<0.8293||lat>55.8271); }
+    function transformlat(lng, lat){
+        let ret=-100+2*lng+3*lat+0.2*lat*lat+0.1*lng*lat+0.2*Math.sqrt(Math.abs(lng));
+        ret+= (20*Math.sin(6*lng*PI)+20*Math.sin(2*lng*PI))*2/3;
+        ret+= (20*Math.sin(lat*PI)+40*Math.sin(lat/3*PI))*2/3;
+        ret+= (160*Math.sin(lat/12*PI)+320*Math.sin(lat*PI/30))*2/3;
+        return ret;
+    }
+    function transformlng(lng, lat){
+        let ret=300+lng+2*lat+0.1*lng*lng+0.1*lng*lat+0.1*Math.sqrt(Math.abs(lng));
+        ret+= (20*Math.sin(6*lng*PI)+20*Math.sin(2*lng*PI))*2/3;
+        ret+= (20*Math.sin(lng*PI)+40*Math.sin(lng/3*PI))*2/3;
+        ret+= (150*Math.sin(lng/12*PI)+300*Math.sin(lng/30*PI))*2/3;
+        return ret;
+    }
+    function wgs84togcj02(lng, lat){
+        if(out_of_china(lng,lat)) return [lng,lat];
+        let dlat=transformlat(lng-105,lat-35), dlng=transformlng(lng-105,lat-35);
+        const radlat=lat/180*PI; let magic=Math.sin(radlat);
+        magic=1-ee*magic*magic; const sqrtmagic=Math.sqrt(magic);
+        dlat=(dlat*180)/((a*(1-ee))/(magic*sqrtmagic)*PI);
+        dlng=(dlng*180)/(a/sqrtmagic*Math.cos(radlat)*PI);
+        return [lng+dlng, lat+dlat];
+    }
+
+    /* ===== 距离计算与插值 ===== */
+    function haversine(aLngLat, bLngLat){
+        const [lng1,lat1]=aLngLat, [lng2,lat2]=bLngLat;
+        const R=6371000;
+        const toRad = d=>d*PI/180;
+        const dLat=toRad(lat2-lat1), dLng=toRad(lng2-lng1);
+        const s1=Math.sin(dLat/2), s2=Math.sin(dLng/2);
+        const aa=s1*s1 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*s2*s2;
+        return 2*R*Math.asin(Math.sqrt(aa));
+    }
+    function buildCumulativeDistances(path){
+        const d=[0]; for(let i=1;i<path.length;i++){ d.push(d[i-1]+haversine(path[i-1], path[i])); }
+        return d;
+    }
+    function findSegmentIndex(distArr, target){
+        let lo=1, hi=distArr.length-1;
+        if(target<=0) return 1;
+        const total=distArr[hi];
+        if(target>=total) return hi;
+        while(lo<=hi){
+            const mid=(lo+hi)>>1;
+            if(distArr[mid]===target) return mid;
+            if(distArr[mid]<target) lo=mid+1; else hi=mid-1;
+        }
+        return lo;
+    }
+    function interpolateOnPath(path, distArr, target){
+        if(target<=0) return path[0];
+        const N=path.length-1, total=distArr[N];
+        if(target>=total) return path[N];
+        const i=findSegmentIndex(distArr, target);
+        const d0=distArr[i-1], d1=distArr[i];
+        const r=(target-d0)/(d1-d0);
+        const [lng0,lat0]=path[i-1], [lng1,lat1]=path[i];
+        return [lng0+(lng1-lng0)*r, lat0+(lat1-lat0)*r];
+    }
+
+    /* ===== 地图与状态 ===== */
+    const map = new AMap.Map('container', {
+        zoom: 17,
+        pitch: 60,
+        viewMode: '3D',
+        center: [116.397428, 39.90923],
+        layers: [
+            new AMap.TileLayer.Satellite(),
+            new AMap.TileLayer.RoadNet()
+        ]
+    });
+
+    let points = [], distArr = [], totalDist = 0;
+    let polylineBlue, polylineRed, polylineGray;
+    let timer = null;
+    let baseInterval = 50;
+    let speedMps = 10;
+    let speedMultiplier = 50; // 保留你的默认倍速
+    let headDist = 0;
+    let redLength = 2000;
+    let followCamera = true;
+    let loopToStart = false;
+    let fixedHeading = 'north'; // 默认朝北
+
+    // 帧间隔控制变量
+    let headingUpdateInterval = 10; // 默认每10帧更新一次方向
+    let frameCounter = 0;
+
+    const fileInput = document.getElementById('fileInput');
+    const playBtn   = document.getElementById('playBtn');
+    const progress  = document.getElementById('progress');
+    const speedSel  = document.getElementById('speedSelect');
+    const readout   = document.getElementById('readout');
+    const redLengthInput = document.getElementById('redLengthInput');
+    const speedInput = document.getElementById('speedInput');
+    const pitchInput = document.getElementById('pitchInput');
+    const followCheck = document.getElementById('followCheck');
+    const loopCheck = document.getElementById('loopCheck');
+    const headingSelect = document.getElementById('headingSelect');
+    const headingIntervalInput = document.getElementById('headingIntervalInput');
+
+    function setControlsEnabled(on){
+        playBtn.disabled = !on;
+        progress.disabled = !on;
+        speedSel.disabled = !on;
+        redLengthInput.disabled = !on;
+        speedInput.disabled = !on;
+        pitchInput.disabled = !on;
+        followCheck.disabled = !on;
+        loopCheck.disabled = !on;
+        headingSelect.disabled = !on;
+        headingIntervalInput.disabled = !on;
+    }
+    function updateReadout(){
+        readout.textContent = `${Math.round(headDist)}m / ${Math.round(totalDist)}m`;
+    }
+    function headDistToProgress(){
+        if (totalDist<=0) return 0;
+        return Math.round((headDist/totalDist)*1000);
+    }
+    function progressToHeadDist(val){
+        return (totalDist * (val/1000));
+    }
+
+    // 初始化三条线（保留你的颜色）
+    function createOrResetLayers(){
+        map.clearMap();
+        polylineBlue = new AMap.Polyline({
+            path: [], strokeColor: "red", strokeWeight: 6, strokeOpacity: 0.9
+        });
+        map.add(polylineBlue);
+
+        polylineRed = new AMap.Polyline({
+            path: [], strokeColor: "white", strokeWeight: 6, strokeOpacity: 1
+        });
+        map.add(polylineRed);
+
+        polylineGray = new AMap.Polyline({
+            path: points, strokeColor: "yellow", strokeWeight: 5, strokeOpacity: 0.4
+        });
+        map.add(polylineGray);
+
+        map.setFitView([polylineGray]);
+    }
+
+    // 根据起止距离生成路径
+    function buildSegmentPath(startDist, endDist) {
+        if (endDist <= startDist) return [];
+        const path = [];
+        const step = 20;
+        for (let d = startDist; d <= endDist; d += step) {
+            path.push(interpolateOnPath(points, distArr, d));
+        }
+        path.push(interpolateOnPath(points, distArr, endDist));
+        return path;
+    }
+
+    // 计算两点间航向角（0°=北，顺时针）
+    function calcBearing(p1, p2) {
+        const toRad = d => d * Math.PI / 180;
+        const toDeg = r => r * 180 / Math.PI;
+        const [lng1, lat1] = p1;
+        const [lng2, lat2] = p2;
+        const dLon = toRad(lng2 - lng1);
+        const y = Math.sin(dLon) * Math.cos(toRad(lat2));
+        const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+            Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+        let brng = toDeg(Math.atan2(y, x));
+        return (brng + 360) % 360;
+    }
+
+    // 应用动态方向锁定（带帧间隔）
+    function applyFixedHeadingDynamic() {
+        frameCounter++;
+        if (frameCounter < headingUpdateInterval) {
+            return; // 未到更新间隔，不计算
+        }
+        frameCounter = 0; // 重置计数
+
+        const idx = findSegmentIndex(distArr, headDist);
+        if (idx >= points.length) return;
+        const curr = interpolateOnPath(points, distArr, headDist);
+        const next = points[Math.min(idx, points.length - 1)];
+        const bearing = calcBearing(curr, next); // 实际航向
+
+        let rotation;
+        if (fixedHeading === 'north') {
+            rotation = (360 - bearing) % 360;
+        } else {
+            rotation = (360 - bearing + 180) % 360;
+        }
+        map.setRotation(rotation);
+    }
+
+    // 更新三色轨迹
+    function updateGeometry() {
+        if (!points.length) return;
+        const headPos = interpolateOnPath(points, distArr, headDist);
+
+        let bluePath = [];
+        if (headDist > redLength) {
+            const blueEnd = headDist - redLength;
+            bluePath = buildSegmentPath(0, blueEnd);
+        }
+
+        const redStart = Math.max(0, headDist - redLength);
+        const redPath = buildSegmentPath(redStart, headDist);
+
+        const grayPath = buildSegmentPath(headDist, totalDist);
+
+        polylineBlue.setPath(bluePath);
+        polylineRed.setPath(redPath);
+        polylineGray.setPath(grayPath);
+
+        if (followCamera) {
+            map.setCenter(headPos);
+        }
+        applyFixedHeadingDynamic();
+        progress.value = headDistToProgress();
+        updateReadout();
+    }
+
+    function startTimer(){
+        clearInterval(timer);
+        timer = setInterval(()=>{
+            headDist += speedMps * speedMultiplier * (baseInterval/1000);
+            if (headDist >= totalDist){
+                headDist = totalDist;
+                updateGeometry();
+                if (loopToStart) {
+                    resetPlayback();
+                } else {
+                    pause();
+                }
+                return;
+            }
+            updateGeometry();
+        }, baseInterval);
+    }
+    function play(){
+        if (!points.length) return;
+        playBtn.textContent = '⏸ 暂停';
+        startTimer();
+    }
+    function pause(){
+        playBtn.textContent = '▶ 播放';
+        clearInterval(timer);
+    }
+    function resetPlayback(){
+        headDist = 0;
+        pause();
+        updateGeometry();
+    }
+
+    /* ===== 文件选择事件 ===== */
+    fileInput.addEventListener('change', (e)=>{
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = evt=>{
+            try{
+                const gpxText = evt.target.result;
+                const gpx = new gpxParser();
+                gpx.parse(gpxText);
+                const raw = (gpx.tracks && gpx.tracks[0] && gpx.tracks[0].points) ? gpx.tracks[0].points : [];
+                if (!raw.length) throw new Error('GPX 中没有轨迹点');
+                points = raw.map(p => wgs84togcj02(p.lon, p.lat));
+
+                const cleaned = [points[0]];
+                for (let i=1;i<points.length;i++){
+                    const [a,b]=[cleaned[cleaned.length-1], points[i]];
+                    if (a[0]!==b[0] || a[1]!==b[1]) cleaned.push(b);
+                }
+                points = cleaned;
+
+                distArr = buildCumulativeDistances(points);
+                totalDist = distArr[distArr.length-1];
+
+                createOrResetLayers();
+                setControlsEnabled(true);
+                resetPlayback();
+            }catch(err){
+                alert('解析 GPX 失败：' + err.message);
+                setControlsEnabled(false);
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    /* ===== 控件事件绑定 ===== */
+    playBtn.addEventListener('click', ()=>{
+        if (playBtn.textContent.includes('播放')) play(); else pause();
+    });
+    progress.addEventListener('input', (e)=>{
+        headDist = progressToHeadDist(parseInt(e.target.value,10));
+        updateGeometry();
+    });
+    speedSel.addEventListener('change', (e)=>{
+        speedMultiplier = parseFloat(e.target.value);
+        if (playBtn.textContent.includes('暂停')) startTimer();
+    });
+    redLengthInput.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val > 0) {
+            redLength = val;
+            updateGeometry();
+        }
+    });
+    speedInput.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val > 0) {
+            speedMps = val;
+            if (playBtn.textContent.includes('暂停')) startTimer();
+        }
+    });
+    pitchInput.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val >= 0 && val <= 80) {
+            map.setPitch(val);
+        }
+    });
+    followCheck.addEventListener('change', (e) => {
+        followCamera = e.target.checked;
+    });
+    loopCheck.addEventListener('change', (e) => {
+        loopToStart = e.target.checked;
+    });
+    headingSelect.addEventListener('change', (e) => {
+        fixedHeading = e.target.value;
+        applyFixedHeadingDynamic();
+    });
+    headingIntervalInput.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (!isNaN(val) && val > 0) {
+            headingUpdateInterval = val;
+        }
+    });
+
+    setControlsEnabled(false);
+    updateReadout();
+</script>
+</body>
+</html>
