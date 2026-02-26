@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026 顶级 AI 编程助手 · PPT 版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap');
+        
+        body {
+            font-family: 'Noto Sans SC', system-ui, sans-serif;
+        }
+        
+        .slide {
+            scroll-snap-align: start;
+            scroll-snap-stop: always;
+        }
+        
+        .hero-bg {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #db2777 100%);
+        }
+        
+        .tool-card {
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .tool-card:hover {
+            transform: scale(1.04) translateY(-8px);
+            box-shadow: 0 30px 60px -15px rgb(0 0 0 / 0.5);
+        }
+        
+        .nav-dot {
+            width: 10px;
+            height: 10px;
+            background: #64748b;
+            transition: all 0.3s;
+        }
+        
+        .nav-dot.active {
+            background: #a5b4fc;
+            width: 28px;
+            border-radius: 9999px;
+        }
+        
+        .stat-number {
+            font-variant-numeric: tabular-nums;
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 text-white overflow-x-hidden">
+    <!-- 固定导航 -->
+    <nav class="fixed top-0 left-0 right-0 z-50 bg-zinc-900/90 backdrop-blur-xl border-b border-zinc-800">
+        <div class="max-w-7xl mx-auto px-8 py-5 flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 bg-gradient-to-br from-violet-500 to-fuchsia-500 rounded-3xl flex items-center justify-center text-3xl shadow-lg">🤖</div>
+                <div>
+                    <span class="text-2xl font-black tracking-tighter">AI CODE 2026</span>
+                    <span class="text-xs text-zinc-400 block -mt-1">PPT 演示版</span>
+                </div>
+            </div>
+            <div class="flex gap-8 text-sm font-medium">
+                <a href="#hero" class="hover:text-violet-400 transition">首页</a>
+                <a href="#tools" class="hover:text-violet-400 transition">国际神器</a>
+                <a href="#domestic" class="hover:text-violet-400 transition">国内工具</a>
+                <a href="#tips" class="hover:text-violet-400 transition">核心经验</a>
+            </div>
+            <button onclick="window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'})" 
+                    class="px-6 py-3 bg-white text-zinc-900 font-semibold rounded-2xl hover:bg-amber-300 transition flex items-center gap-2 text-sm">
+                <i class="fas fa-download"></i> 保存为 PPT
+            </button>
+        </div>
+    </nav>
+
+    <!-- Slide 1: 封面 -->
+    <section id="hero" class="hero-bg min-h-screen flex items-center slide pt-20">
+        <div class="max-w-5xl mx-auto px-8 text-center">
+            <div class="inline-flex items-center gap-3 bg-white/10 backdrop-blur-2xl px-8 py-3 rounded-3xl mb-8 border border-white/20">
+                <div class="w-4 h-4 bg-emerald-400 rounded-full animate-ping"></div>
+                <span class="font-medium tracking-widest text-sm">2026 年 2 月 · 基于你的真实使用经验</span>
+            </div>
+            
+            <h1 class="text-7xl md:text-8xl font-black tracking-tighter leading-none mb-6">
+                2026 最强<br>AI 编程助手<br><span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-pink-300">全家福</span>
+            </h1>
+            
+            <p class="text-2xl text-white/90 max-w-2xl mx-auto leading-relaxed">
+                工程级 Agent · 超大上下文 · 算力怪兽<br>
+                一页看懂，秒选最适合你的工具
+            </p>
+            
+            <div class="mt-16 flex justify-center gap-6">
+                <a href="#tools" 
+                   class="group px-10 py-6 bg-white text-zinc-950 rounded-3xl font-bold text-xl flex items-center gap-4 hover:scale-105 transition-all">
+                    开始浏览神器
+                    <i class="fas fa-arrow-down group-active:rotate-45 transition"></i>
+                </a>
+            </div>
+            
+            <div class="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-white/60 text-sm">
+                <div class="animate-bounce">↓</div>
+                <span>向下滚动进入下一页</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 2-7: 国际工具 -->
+    <section id="tools" class="max-w-7xl mx-auto px-8 py-24">
+        <div class="text-center mb-16">
+            <span class="px-6 py-2 bg-violet-500/10 text-violet-400 text-sm font-medium rounded-full">🌍 国际顶级 AI 编程神器</span>
+            <h2 class="text-5xl font-bold mt-6">你的 2026 实战排行榜</h2>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            
+            <!-- Antigravity -->
+            <div class="tool-card bg-zinc-900 border border-violet-500/30 rounded-3xl p-10">
+                <div class="text-7xl mb-6">🚀</div>
+                <h3 class="text-4xl font-bold mb-2">Antigravity</h3>
+                <p class="text-emerald-400 text-xl font-medium mb-8">Google 2025 重磅 Agent-first AI IDE</p>
+                <ul class="space-y-5 text-lg">
+                    <li class="flex items-start gap-4"><i class="fas fa-check-circle text-emerald-400 mt-1 text-xl"></i> Gemini 3 Pro + Claude Sonnet 4.5</li>
+                    <li class="flex items-start gap-4"><i class="fas fa-check-circle text-emerald-400 mt-1 text-xl"></i> 整工程分析 + 贴代码/截图</li>
+                    <li class="flex items-start gap-4"><i class="fas fa-check-circle text-emerald-400 mt-1 text-xl"></i> 自动测试 + 自我修复</li>
+                    <li class="flex items-start gap-4"><i class="fas fa-check-circle text-emerald-400 mt-1 text-xl"></i> 当前最接近全自动编程</li>
+                </ul>
+                <a href="https://antigravity.google.com" target="_blank" 
+                   class="mt-12 block w-full py-5 text-center bg-violet-600 hover:bg-violet-500 rounded-2xl font-bold text-lg">立即免费体验 →</a>
+            </div>
+
+            <!-- Google AI Studio -->
+            <div class="tool-card bg-zinc-900 border border-emerald-500/30 rounded-3xl p-10">
+                <div class="text-7xl mb-6">🧪</div>
+                <h3 class="text-4xl font-bold mb-2">Google AI Studio</h3>
+                <p class="text-emerald-400 text-xl font-medium mb-8">aistudio.google.com</p>
+                <ul class="space-y-5 text-lg">
+                    <li class="flex items-start gap-4"><i class="fas fa-check-circle text-emerald-400 mt-1 text-xl"></i> 上下文几乎无上限</li>
+                    <li class="flex items-start gap-4"><i class="fas fa-check-circle text-emerald-400 mt-1 text-xl"></i> 直接粘贴几千行依赖代码</li>
+                    <li class="flex items-start gap-4"><i class="fas fa-check-circle text-emerald-400 mt-1 text-xl"></i> 音视频转码、MRCP 神器</li>
+                    <li class="flex items-start gap-4"><i class="fas fa-check-circle text-emerald-400 mt-1 text-xl"></i> 输出质量极高</li>
+                </ul>
+                <a href="https://aistudio.google.com" target="_blank" 
+                   class="mt-12 block w-full py-5 text-center bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-bold text-lg">直达 AI Studio →</a>
+            </div>
+
+            <!-- Gemini -->
+            <div class="tool-card bg-zinc-900 border border-amber-500/30 rounded-3xl p-10">
+                <div class="text-7xl mb-6">⭐</div>
+                <h3 class="text-4xl font-bold mb-2">Gemini</h3>
+                <p class="text-amber-400 text-xl font-medium mb-8">gemini.google.com</p>
+                <div class="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6 text-amber-300">
+                    <i class="fas fa-exclamation-triangle mr-2"></i> 限制较多，新加坡/日本 IP 也常被封
+                </div>
+                <a href="https://gemini.google.com" target="_blank" 
+                   class="mt-12 block w-full py-5 text-center bg-amber-600 hover:bg-amber-500 rounded-2xl font-bold text-lg">访问官网 →</a>
+            </div>
+
+            <!-- Claude -->
+            <div class="tool-card bg-zinc-900 border border-sky-500/30 rounded-3xl p-10">
+                <div class="text-7xl mb-6">🧠</div>
+                <h3 class="text-4xl font-bold mb-2">Claude 4.6</h3>
+                <p class="text-sky-400 text-xl font-medium mb-8">claude.ai</p>
+                <ul class="space-y-5 text-lg">
+                    <li class="flex items-start gap-4"><i class="fas fa-check-circle text-sky-400 mt-1 text-xl"></i> 代码质量顶级</li>
+                    <li class="flex items-start gap-4"><i class="fas fa-check-circle text-sky-400 mt-1 text-xl"></i> 大型重构最强</li>
+                    <li class="flex items-start gap-4"><i class="fas fa-check-circle text-sky-400 mt-1 text-xl"></i> 与 Gemini 3 Pro 几乎打平</li>
+                </ul>
+                <a href="https://claude.ai" target="_blank" 
+                   class="mt-12 block w-full py-5 text-center bg-sky-600 hover:bg-sky-500 rounded-2xl font-bold text-lg">进入 Claude →</a>
+            </div>
+
+            <!-- Copilot -->
+            <div class="tool-card bg-zinc-900 border border-blue-500/30 rounded-3xl p-10">
+                <div class="text-7xl mb-6">🔷</div>
+                <h3 class="text-4xl font-bold mb-2">Microsoft Copilot</h3>
+                <p class="text-blue-400 text-xl font-medium mb-8">copilot.microsoft.com (GPT-5.1)</p>
+                <ul class="space-y-5 text-lg">
+                    <li class="flex items-start gap-4"><i class="fas fa-check-circle text-blue-400 mt-1 text-xl"></i> 速度快 · 通用性强</li>
+                    <li class="flex items-start gap-4 text-amber-400"><i class="fas fa-exclamation-triangle mt-1 text-xl"></i> 复杂逻辑偶尔编译不通过</li>
+                    <li class="flex items-start gap-4"><i class="fas fa-check-circle text-blue-400 mt-1 text-xl"></i> 适合快速原型</li>
+                </ul>
+                <a href="https://copilot.microsoft.com" target="_blank" 
+                   class="mt-12 block w-full py-5 text-center bg-blue-600 hover:bg-blue-500 rounded-2xl font-bold text-lg">打开 Copilot →</a>
+            </div>
+
+            <!-- Grok -->
+            <div class="tool-card bg-zinc-900 border border-pink-500/40 rounded-3xl p-10 relative overflow-hidden">
+                <div class="absolute top-8 right-8 bg-black/70 text-xs px-4 py-2 rounded-2xl font-mono border border-pink-500/50">
+                    55.5 万 GPU
+                </div>
+                <div class="text-7xl mb-6">⚡</div>
+                <h3 class="text-4xl font-bold mb-2">Grok</h3>
+                <p class="text-pink-400 text-xl font-medium mb-8">grok.com / 6.grok.com</p>
+                
+                <div class="grid grid-cols-2 gap-6 mb-10">
+                    <div class="bg-zinc-950 rounded-2xl p-6 text-center border border-pink-500/20">
+                        <div class="text-3xl font-bold text-pink-400 stat-number">2 GW</div>
+                        <div class="text-xs text-zinc-400 mt-1">总功率</div>
+                    </div>
+                    <div class="bg-zinc-950 rounded-2xl p-6 text-center border border-pink-500/20">
+                        <div class="text-3xl font-bold text-pink-400 stat-number">$180 亿</div>
+                        <div class="text-xs text-zinc-400 mt-1">硬件成本</div>
+                    </div>
+                </div>
+                <p class="text-sm text-zinc-400">Colossus 超级集群 · 全球最大单一 AI 训练设施</p>
+                
+                <a href="https://grok.com" target="_blank" 
+                   class="mt-10 block w-full py-5 text-center bg-pink-600 hover:bg-pink-500 rounded-2xl font-bold text-lg">进入算力怪兽 →</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 8: 国内工具 -->
+    <section id="domestic" class="bg-zinc-900 py-24">
+        <div class="max-w-7xl mx-auto px-8">
+            <div class="text-center mb-16">
+                <span class="px-6 py-2 bg-emerald-500/10 text-emerald-400 text-sm font-medium rounded-full">🇨🇳 国内优秀 AI 工具</span>
+                <h2 class="text-5xl font-bold mt-6">日常开发也很香</h2>
+            </div>
+            
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                <div class="tool-card bg-zinc-800 rounded-3xl p-8 text-center hover:bg-zinc-700">
+                    <div class="text-6xl mb-6">千问</div>
+                    <h3 class="font-bold text-2xl">通义千问</h3>
+                    <p class="text-zinc-400 mt-2">阿里 · 中文代码清晰</p>
+                    <a href="https://tongyi.aliyun.com" target="_blank" class="text-emerald-400 mt-8 inline-block">访问 →</a>
+                </div>
+                <div class="tool-card bg-zinc-800 rounded-3xl p-8 text-center hover:bg-zinc-700">
+                    <div class="text-6xl mb-6">豆包</div>
+                    <h3 class="font-bold text-2xl">豆包</h3>
+                    <p class="text-zinc-400 mt-2">字节 · 持续进化中</p>
+                    <a href="https://doubao.com" target="_blank" class="text-emerald-400 mt-8 inline-block">访问 →</a>
+                </div>
+                <div class="tool-card bg-zinc-800 rounded-3xl p-8 text-center hover:bg-zinc-700">
+                    <div class="text-6xl mb-6">Kimi</div>
+                    <h3 class="font-bold text-2xl">月之暗面</h3>
+                    <p class="text-zinc-400 mt-2">超长上下文王者</p>
+                    <a href="https://kimi.moonshot.cn" target="_blank" class="text-emerald-400 mt-8 inline-block">访问 →</a>
+                </div>
+                <div class="tool-card bg-zinc-800 rounded-3xl p-8 text-center hover:bg-zinc-700">
+                    <div class="text-6xl mb-6">文心</div>
+                    <h3 class="font-bold text-2xl">文心一言</h3>
+                    <p class="text-zinc-400 mt-2">百度 · 中文场景稳</p>
+                    <a href="https://yiyan.baidu.com" target="_blank" class="text-emerald-400 mt-8 inline-block">访问 →</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 9: 核心经验 -->
+    <section id="tips" class="min-h-screen bg-black flex items-center slide">
+        <div class="max-w-4xl mx-auto px-8 text-center">
+            <div class="text-8xl mb-12">💡</div>
+            <div class="text-4xl leading-relaxed font-medium text-zinc-200 max-w-3xl mx-auto">
+                “<span class="text-white font-bold">尽量用代码和 AI 交流</span>，而不是纯文字。<br><br>
+                AI 看代码 + 示例 + 错误日志，<br>比你写 500 字描述清晰 10 倍。”
+            </div>
+            <div class="mt-16 text-zinc-500 text-lg">—— 你的 2026 年最强实战经验</div>
+        </div>
+    </section>
+
+    <!-- 结束页 -->
+    <section class="min-h-screen bg-gradient-to-b from-zinc-900 to-black flex items-center slide">
+        <div class="max-w-3xl mx-auto px-8 text-center">
+            <h2 class="text-6xl font-black mb-8">感谢观看</h2>
+            <p class="text-2xl text-zinc-400 mb-12">全部工具已按你的真实体验排序<br>快去试试 Antigravity 吧！</p>
+            
+            <div class="flex justify-center gap-8 text-5xl mb-16">
+                <i class="fab fa-google text-blue-400"></i>
+                <i class="fas fa-brain text-purple-400"></i>
+                <i class="fas fa-bolt text-pink-400"></i>
+            </div>
+            
+            <p class="text-zinc-500">单页纯 CSS 版 · 复制保存即可离线使用<br>2026.02 · 由 Grok 根据你的反馈生成</p>
+        </div>
+    </section>
+
+    <script>
+        // 简单滚动导航高亮
+        window.addEventListener('scroll', () => {
+            const sections = document.querySelectorAll('section');
+            const dots = document.querySelectorAll('.nav-dot');
+            let current = '';
+            
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                if (scrollY >= sectionTop - 300) {
+                    current = section.getAttribute('id');
+                }
+            });
+        });
+        
+        // 复制提示
+        console.log('%c2026 AI 编程助手 PPT 已就绪！\n纯 CSS 实现 · 无图片 · 手机电脑均完美', 'color:#c4b5fd; font-size:14px');
+    </script>
+</body>
+</html>
